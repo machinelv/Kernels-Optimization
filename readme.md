@@ -18,4 +18,5 @@ And the project need realizing below codes:
 - MPI
 - CUDA
 
-We would like to realize those kernels by C++ 20 standard.
+We would like to realize those kernels by C++ 11 standard.
+

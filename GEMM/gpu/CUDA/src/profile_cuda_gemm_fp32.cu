@@ -14,9 +14,9 @@ int main()
     float const fp32_abs_tol{1.0e-3f};
     double const fp32_rel_tol{0.0e-4f};
 
-    constexpr size_t m{4096U};
-    constexpr size_t k{4096U};
-    constexpr size_t n{4096U};
+    constexpr size_t m{16384U};
+    constexpr size_t k{16384U};
+    constexpr size_t n{16384U};
 
     constexpr size_t lda{(k + 16U - 1U) / 16U * 16U};
     constexpr size_t ldb{(n + 16U - 1U) / 16U * 16U};
@@ -43,25 +43,25 @@ int main()
                            size_t, float const*, size_t, float const*, float*,
                            size_t, cudaStream_t)>>> const
         gemm_kernel_launch_functions{
-            {"Custom GEMM Kernel V00", launch_gemm_kernel_v00<float>},
+            // {"Custom GEMM Kernel V00", launch_gemm_kernel_v00<float>},
             {"Custom GEMM Kernel V01", launch_gemm_kernel_v01<float>},
-            {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
-            {"Custom GEMM Kernel V02 Vectorized",
-             launch_gemm_kernel_v02_vectorized<float>},
-            {"Custom GEMM Kernel V03", launch_gemm_kernel_v03<float>},
-            {"Custom GEMM Kernel V03 Vectorized",
-             launch_gemm_kernel_v03_vectorized<float>},
-            {"Custom GEMM Kernel V04", launch_gemm_kernel_v04<float>},
-            {"Custom GEMM Kernel V04 Vectorized",
-             launch_gemm_kernel_v04_vectorized<float>},
-            {"Custom GEMM Kernel V05", launch_gemm_kernel_v05<float>},
-            {"Custom GEMM Kernel V05 Vectorized",
-             launch_gemm_kernel_v05_vectorized<float>},
-            {"Custom GEMM Kernel V06", launch_gemm_kernel_v06<float>},
-            {"Custom GEMM Kernel V06 Vectorized",
-             launch_gemm_kernel_v06_vectorized<float>},
-            {"Custom GEMM Kernel V06 Vectorized Double Buffered",
-             launch_gemm_kernel_v06_vectorized_double_buffered<float>},
+            // {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
+            // {"Custom GEMM Kernel V02 Vectorized",
+            //  launch_gemm_kernel_v02_vectorized<float>},
+            // {"Custom GEMM Kernel V03", launch_gemm_kernel_v03<float>},
+            // {"Custom GEMM Kernel V03 Vectorized",
+            //  launch_gemm_kernel_v03_vectorized<float>},
+            // {"Custom GEMM Kernel V04", launch_gemm_kernel_v04<float>},
+            // {"Custom GEMM Kernel V04 Vectorized",
+            //  launch_gemm_kernel_v04_vectorized<float>},
+            // {"Custom GEMM Kernel V05", launch_gemm_kernel_v05<float>},
+            // {"Custom GEMM Kernel V05 Vectorized",
+            //  launch_gemm_kernel_v05_vectorized<float>},
+            // {"Custom GEMM Kernel V06", launch_gemm_kernel_v06<float>},
+            // {"Custom GEMM Kernel V06 Vectorized",
+            //  launch_gemm_kernel_v06_vectorized<float>},
+            // {"Custom GEMM Kernel V06 Vectorized Double Buffered",
+            //  launch_gemm_kernel_v06_vectorized_double_buffered<float>},
         };
 
     for (auto const& gemm_kernel_launch_function : gemm_kernel_launch_functions)

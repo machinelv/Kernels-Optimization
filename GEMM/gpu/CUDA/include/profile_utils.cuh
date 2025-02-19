@@ -270,8 +270,7 @@ template <typename T,
 std::pair<float, float> profile_gemm(
     size_t m, size_t n, size_t k, size_t lda, size_t ldb, size_t ldc,
     std::function<void(size_t, size_t, size_t, T const*, T const*, size_t,
-                       T const*, size_t, T const*, T*, size_t, cudaStream_t)>
-        gemm_kernel_launch_function,
+                       T const*, size_t, T const*, T*, size_t, cudaStream_t)> gemm_kernel_launch_function,
     T abs_tol, double rel_tol, size_t num_repeats = 10, size_t num_warmups = 10,
     unsigned int seed = 0U)
 {
@@ -351,8 +350,7 @@ std::pair<float, float> profile_gemm(
     CHECK_CUDA_ERROR(cudaStreamSynchronize(stream));
     CHECK_CUDA_ERROR(cudaMemcpy(C_host_from_device, C_device,
                                 m * ldc * sizeof(T), cudaMemcpyDeviceToHost));
-    assert(all_close<T>(C_host_from_device, C_host_ref, m, n, ldc, abs_tol,
-                        rel_tol));
+    assert(all_close<T>(C_host_from_device, C_host_ref, m, n, ldc, abs_tol, rel_tol));
 
     // Launch cuBLAS GEMM.
     float const latency_cublas{measure_performance<void>(

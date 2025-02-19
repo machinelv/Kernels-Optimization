@@ -1,6 +1,6 @@
 [submodule "My_G_Matrix"]
     path = My_G_Matrix
     url = https://github.com/machinelv/My_G_Matrix.git
-[submodule "ref/CUDA-GEMM-Optimization"]
+[submodule "CUDA-GEMM-Optimization"]
     path = ref/CUDA-GEMM-Optimization
     url = https://github.com/leimao/CUDA-GEMM-Optimization.git

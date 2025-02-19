@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.27)
 
 project(CUDA-GEMM-Algorithms VERSION 0.0.1 LANGUAGES CXX CUDA)
 
