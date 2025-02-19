@@ -34,10 +34,11 @@ void launch_gemm_kernel_v01(size_t m, size_t n, size_t k, T const* alpha,
                             T const* beta, T* C, size_t ldc,
                             cudaStream_t stream)
 {
-    dim3 const block_size{32U, 32U};
-    size_t const grid_size_x = (m + block_size.x - 1U) / block_size.x;
-    size_t const grid_size_y = (n + block_size.y - 1U) / block_size.y;
-    dim3 const grid_size{grid_size_x, grid_size_y};
+
+    dim3 const block_size{32U, 32U, 1U};
+    size_t const grid_size_x = (n + block_size.x - 1U) / block_size.x;
+    size_t const grid_size_y = (m + block_size.y - 1U) / block_size.y;
+    dim3 const grid_size{grid_size_x, grid_size_y, 1U};
 
     gemm_v01<T><<<grid_size, block_size, 0U, stream>>>(m, n, k, *alpha, A, lda,
                                                       B, ldb, *beta, C, ldc);
