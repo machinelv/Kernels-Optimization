@@ -14,9 +14,9 @@ int main()
     float const fp32_abs_tol{1.0e-3f};
     double const fp32_rel_tol{0.0e-4f};
 
-    constexpr size_t m{16384U};
-    constexpr size_t k{16384U};
-    constexpr size_t n{16384U};
+    constexpr size_t m{8192U};
+    constexpr size_t k{8192U};
+    constexpr size_t n{8192U};
 
     constexpr size_t lda{(k + 16U - 1U) / 16U * 16U};
     constexpr size_t ldb{(n + 16U - 1U) / 16U * 16U};
@@ -44,8 +44,8 @@ int main()
                            size_t, cudaStream_t)>>> const
         gemm_kernel_launch_functions{
             // {"Custom GEMM Kernel V00", launch_gemm_kernel_v00<float>},
-            {"Custom GEMM Kernel V01", launch_gemm_kernel_v01<float>},
-            // {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
+            // {"Custom GEMM Kernel V01", launch_gemm_kernel_v01<float>},
+            {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
             // {"Custom GEMM Kernel V02 Vectorized",
             //  launch_gemm_kernel_v02_vectorized<float>},
             // {"Custom GEMM Kernel V03", launch_gemm_kernel_v03<float>},

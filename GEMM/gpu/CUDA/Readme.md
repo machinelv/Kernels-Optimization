@@ -102,3 +102,29 @@ Custom GEMM VS cuBLAS GEMM Performance: 27.8649%
 ```
 
 Partition the matrix A and matrix B into tiles. While in version 02.1, we only partition the matrices once. And there is a bug in the program: the size of M, N, K tiles can't be changed. This bug will be fixed in version 02.2
+
+#### v02.2
+In version 02.2, we improve the program so that the we can change the size of K tiles. We improve the data transmission from global memory to shared memory.
+
+```bash
+Device Name: Tesla V100-SXM3-32GB
+Memory Size: 31.7394 GB
+Peak Bandwitdh: 980.992 GB/s
+
+Matrix Size: M = 8192 N = 8192 K = 8192
+Matrix A: 8192 x 8192 Leading Dimension Size = 8192
+Matrix B: 8192 x 8192 Leading Dimension Size = 8192
+Matrix C: 8192 x 8192 Leading Dimension Size = 8192
+
+Custom GEMM Kernel V02
+cuBLAS GEMM Kernel Performance
+Latency: 94.6739 ms
+Effective Bandwidth: 8.50611 GB/s
+Effective TFLOPS: 11.6137 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 362.553 ms
+Effective Bandwidth: 2.22121 GB/s
+Effective TFLOPS: 3.03269 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 26.1131%
+```
+
