@@ -2,15 +2,15 @@
 
 This project aims to optimite basic computation kernels in CPU and GPU. The basic kernels conclude:
 
-- Reduce
-- GEMM
-- Conv
-- SPMV
+- Reduce(Need Moving)
+- GEMM(DOING CUDA part)
+- Conv(TODO)
+- SPMV(TODO)
 
 And the project need realizing in below codes:
 
 - AVX-512
-- SVE(arm)
+- SVE
 - CUDA
 
 with
