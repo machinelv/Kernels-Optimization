@@ -2,21 +2,20 @@
 
 This project aims to optimite basic computation kernels in CPU and GPU. The basic kernels conclude:
 
-- Elementwise
 - Reduce
 - GEMM
-- GEMV
-- SPMV
 - Conv
+- SPMV
 
-And the project need realizing below codes:
+And the project need realizing in below codes:
 
-- Serial
 - AVX-512
 - SVE(arm)
-- OpenMP
-- MPI
 - CUDA
 
-We would like to realize those kernels by C++ 11 standard.
+with
+- OpenMP
+- MPI
+
+We would like to realize those kernels by at least C++ 11 standard.
 
