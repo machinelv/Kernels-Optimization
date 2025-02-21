@@ -13,6 +13,7 @@ __global__ void gemm_v03(size_t m, size_t n, size_t k, T alpha, T const* A,
                          size_t ldc)
 {
     
+    
 }
 
 template <typename T>
@@ -21,7 +22,7 @@ void launch_gemm_kernel_v03(size_t m, size_t n, size_t k, T const* alpha,
                             T const* beta, T* C, size_t ldc,
                             cudaStream_t stream)
 {
-    
+  
 }
 
 // Explicit instantiation.

@@ -106,7 +106,7 @@ Partition the matrix A and matrix B into tiles. While in version 02.1, we only p
 #### v02.2
 In version 02.2, we improve the program so that the we can change the size of K tiles. We improve the data transmission from global memory to shared memory.
 
-```bash
+```
 Device Name: Tesla V100-SXM3-32GB
 Memory Size: 31.7394 GB
 Peak Bandwitdh: 980.992 GB/s
@@ -128,3 +128,52 @@ Effective TFLOPS: 3.03269 TFLOPS
 Custom GEMM VS cuBLAS GEMM Performance: 26.1131%
 ```
 
+#### v02.3
+
+We move the `load_data_from_global_memory_to_shared_memory` part into `cuda_gemm_utils.cuh` as a function.
+
+### v03 
+
+We skipped the realization of v03.
+
+### v04
+
+#### v04.1
+We finish the 2D thread tiling. However, the performance is really bad. 
+
+```bash
+Matrix Size: M = 8192 N = 4096 K = 8192
+Matrix A: 8192 x 8192 Leading Dimension Size = 8192
+Matrix B: 8192 x 4096 Leading Dimension Size = 4096
+Matrix C: 8192 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V04
+cuBLAS GEMM Kernel Performance
+Latency: 47.3764 ms
+Effective Bandwidth: 11.332 GB/s
+Effective TFLOPS: 11.604 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 148.437 ms
+Effective Bandwidth: 3.61683 GB/s
+Effective TFLOPS: 3.70363 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 31.9168%
+```
+
+The performance of the reference realization is 40% higher than my realization. So, we need to use nsight system to profile our program.
+```bash
+Matrix Size: M = 8192 N = 4096 K = 8192
+Matrix A: 8192 x 8192 Leading Dimension Size = 8192
+Matrix B: 8192 x 4096 Leading Dimension Size = 4096
+Matrix C: 8192 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V04
+cuBLAS GEMM Kernel Performance
+Latency: 47.4614 ms
+Effective Bandwidth: 11.3117 GB/s
+Effective TFLOPS: 11.5832 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 63.7542 ms
+Effective Bandwidth: 8.42094 GB/s
+Effective TFLOPS: 8.62305 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 74.4443%
+```

@@ -16,7 +16,7 @@ int main()
 
     constexpr size_t m{8192U};
     constexpr size_t k{8192U};
-    constexpr size_t n{8192U};
+    constexpr size_t n{4096U};
 
     constexpr size_t lda{(k + 16U - 1U) / 16U * 16U};
     constexpr size_t ldb{(n + 16U - 1U) / 16U * 16U};
@@ -45,13 +45,13 @@ int main()
         gemm_kernel_launch_functions{
             // {"Custom GEMM Kernel V00", launch_gemm_kernel_v00<float>},
             // {"Custom GEMM Kernel V01", launch_gemm_kernel_v01<float>},
-            {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
+            // {"Custom GEMM Kernel V02", launch_gemm_kernel_v02<float>},
             // {"Custom GEMM Kernel V02 Vectorized",
             //  launch_gemm_kernel_v02_vectorized<float>},
             // {"Custom GEMM Kernel V03", launch_gemm_kernel_v03<float>},
             // {"Custom GEMM Kernel V03 Vectorized",
             //  launch_gemm_kernel_v03_vectorized<float>},
-            // {"Custom GEMM Kernel V04", launch_gemm_kernel_v04<float>},
+            {"Custom GEMM Kernel V04", launch_gemm_kernel_v04<float>},
             // {"Custom GEMM Kernel V04 Vectorized",
             //  launch_gemm_kernel_v04_vectorized<float>},
             // {"Custom GEMM Kernel V05", launch_gemm_kernel_v05<float>},
