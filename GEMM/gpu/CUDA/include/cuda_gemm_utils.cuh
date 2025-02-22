@@ -13,47 +13,50 @@ __device__ void load_data_from_global_memory_to_shared_memory(
     T B_block_tile[BLOCK_TILE_SIZE_K][BLOCK_TILE_SIZE_N],
     size_t K_block_tile_id, size_t thread_linear_idx, size_t m, size_t n, size_t k) {
 
-    constexpr size_t A_block_tile_size{BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K};
-    constexpr size_t A_block_tile_thread_size{(A_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
+    // constexpr size_t A_block_tile_size{BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K};
+    // constexpr size_t A_block_tile_thread_size{(A_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
 
-    constexpr size_t B_block_tile_size{BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N};
-    constexpr size_t B_block_tile_thread_size{(B_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
-
+    // constexpr size_t B_block_tile_size{BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N};
+    // constexpr size_t B_block_tile_thread_size{(B_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
     
-    unsigned int const A_block_tile_id{blockIdx.y};
-    unsigned int const B_block_tile_id{blockIdx.x};
+    // unsigned int const A_block_tile_id{blockIdx.y};
+    // unsigned int const B_block_tile_id{blockIdx.x};
 
     unsigned int K_block_tile_start{K_block_tile_id * BLOCK_TILE_SIZE_K};
-    for (size_t thread_tile_id{thread_linear_idx * A_block_tile_thread_size}; thread_tile_id < ((thread_linear_idx + 1) * A_block_tile_thread_size); thread_tile_id++) {
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{thread_linear_idx + load_idx * NUM_THREADS};
         size_t const tile_index_m{thread_tile_id / BLOCK_TILE_SIZE_K};
         size_t const tile_index_k{thread_tile_id % BLOCK_TILE_SIZE_K};
 
-        if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
-            size_t const A_index_m{A_block_tile_id * BLOCK_TILE_SIZE_M + tile_index_m};
-            size_t const A_index_k{K_block_tile_start + tile_index_k};
-            T val{0};
+        // if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
+        size_t const A_index_m{blockIdx.y * BLOCK_TILE_SIZE_M + tile_index_m};
+        size_t const A_index_k{K_block_tile_start + tile_index_k};
+        T val{0};
 
-            if (A_index_m < m && A_index_k < k) {
-                val = A[A_index_m * lda + A_index_k];
-            }
-
-            A_block_tile[tile_index_m][tile_index_k] = val;
+        if (A_index_m < m && A_index_k < k) {
+            val = A[A_index_m * lda + A_index_k];
         }
+
+        A_block_tile[tile_index_m][tile_index_k] = val;
+        // }
     }
-    for (size_t thread_tile_id{thread_linear_idx * B_block_tile_thread_size}; thread_tile_id < ((thread_linear_idx + 1) * B_block_tile_thread_size); thread_tile_id++) {
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{thread_linear_idx + load_idx * NUM_THREADS};
         size_t const tile_index_k{thread_tile_id / BLOCK_TILE_SIZE_N};
         size_t const tile_index_n{thread_tile_id % BLOCK_TILE_SIZE_N};
 
-        if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
-            size_t const B_index_k{K_block_tile_start + tile_index_k};
-            size_t const B_index_n{B_block_tile_id * BLOCK_TILE_SIZE_N + tile_index_n};
-            
-            T val{0};
-            if (B_index_k < k && B_index_n < n) {
-                val = B[B_index_k * ldb + B_index_n];
-            }
-            B_block_tile[tile_index_k][tile_index_n] = val;
+        // if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
+        size_t const B_index_k{K_block_tile_start + tile_index_k};
+        size_t const B_index_n{blockIdx.x * BLOCK_TILE_SIZE_N + tile_index_n};
+        
+        T val{0};
+        if (B_index_k < k && B_index_n < n) {
+            val = B[B_index_k * ldb + B_index_n];
         }
+        B_block_tile[tile_index_k][tile_index_n] = val;
+        // }
     }
 
 }

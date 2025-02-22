@@ -186,3 +186,57 @@ Fix bugs:
 I used nsight compute to profile the program. According to the memory chart, my v04 main memory throughput is near the half of the reference's. I think it is main bottleneck. I will change the `load_data_from_global_memory_to_shared_memory` in the next version.
 
 ![alt text](./properties/v04.1-ncu-memory_chart.png)
+
+#### v04.3
+Solve below questions:
+- ~~Why don't use directly x index and y index to fetch the data? (Maybe more bank conflict?)~~
+- The `#pragma unroll` effects the performance
+
+Follow the profiling result, let's find out what the difference between my realization and reference's. 
+
+We change the main memory fetch method. And the performance is shown below. 
+```bash
+Custom GEMM Kernel V02
+cuBLAS GEMM Kernel Performance
+Latency: 34.4699 ms
+Effective Bandwidth: 15.5751 GB/s
+Effective TFLOPS: 15.9489 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 154.972 ms
+Effective Bandwidth: 3.46431 GB/s
+Effective TFLOPS: 3.54745 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 22.2426%
+
+Custom GEMM Kernel V04
+cuBLAS GEMM Kernel Performance
+Latency: 36.1677 ms
+Effective Bandwidth: 14.8439 GB/s
+Effective TFLOPS: 15.2002 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 74.112 ms
+Effective Bandwidth: 7.24405 GB/s
+Effective TFLOPS: 7.41791 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 48.8014%
+```
+
+Change the for loop accumulation method: from `for(i+=N)` to `for(i++)`. It seems like that CUDA loves later for loop more. And `#pragam unroll` will diminish performance when it is added before `for(i+=N)`. 
+
+Now, the performance is still worse than the reference. It seems like DRAM throughput is still lower.
+
+```bash
+Matrix Size: M = 8192 N = 4096 K = 8192
+Matrix A: 8192 x 8192 Leading Dimension Size = 8192
+Matrix B: 8192 x 4096 Leading Dimension Size = 4096
+Matrix C: 8192 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V04
+cuBLAS GEMM Kernel Performance
+Latency: 36.1708 ms
+Effective Bandwidth: 14.8427 GB/s
+Effective TFLOPS: 15.1989 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 53.118 ms
+Effective Bandwidth: 10.1071 GB/s
+Effective TFLOPS: 10.3497 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 68.0952%
+```
