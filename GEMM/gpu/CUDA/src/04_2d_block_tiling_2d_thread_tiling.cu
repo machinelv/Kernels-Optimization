@@ -16,71 +16,61 @@ __global__ void gemm_v04(size_t m, size_t n, size_t k, T alpha, T const* A,
 
     // Compute the A's and B's block tile index, which is same among all threads within a block
     size_t const M_block_tile_id{blockIdx.y};
-    size_t N_block_tile_id{blockIdx.x};
-    size_t K_block_tile_num{(k + BLOCK_TILE_SIZE_K - 1) / BLOCK_TILE_SIZE_K};
+    size_t const N_block_tile_id{blockIdx.x};
+    size_t const K_block_tile_num{(k + BLOCK_TILE_SIZE_K - 1) / BLOCK_TILE_SIZE_K};
 
-    size_t const M_thread_tile_num{(BLOCK_TILE_SIZE_M + THREAD_TILE_SIZE_M - 1) / THREAD_TILE_SIZE_M};
     size_t const M_thread_tile_id{threadIdx.y};
-    size_t const N_thread_tile_num{(BLOCK_TILE_SIZE_N + THREAD_TILE_SIZE_N - 1) / THREAD_TILE_SIZE_N};
     size_t const N_thread_tile_id{threadIdx.x};
-
-    size_t const c_row_idx{M_block_tile_id * BLOCK_TILE_SIZE_M + threadIdx.y};
-    size_t const c_col_idx{N_block_tile_id * BLOCK_TILE_SIZE_N + threadIdx.x};
 
     size_t const threadId{threadIdx.y * blockDim.x + threadIdx.x};
 
     T A_thread_tile[THREAD_TILE_SIZE_M] = {static_cast<T>(0)};
     T B_thread_tile[THREAD_TILE_SIZE_N] = {static_cast<T>(0)};
     T C_thread_tile[THREAD_TILE_SIZE_M][THREAD_TILE_SIZE_N] = {static_cast<T>(0)};
-    if (c_row_idx < m && c_col_idx < n) {
-        //Move K_block tile in the matrix A and matrix B
-        unsigned int K_block_tile_id{0};
-        while (K_block_tile_id < K_block_tile_num) {
-            // Load A and B into block_tile,
-            // and be careful to handle BLOCK_TILE_SIZE_M != BLOCK_TILE_SIZE_N
-            //      and BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K != BLOCK_TILE_SIZE_N * BLOCK_TILE_SIZE_K
-            load_data_from_global_memory_to_shared_memory<T, BLOCK_TILE_SIZE_M, BLOCK_TILE_SIZE_N, BLOCK_TILE_SIZE_K, NUM_THREADS>(
-                A, lda, B, ldb, A_block_tile, B_block_tile, K_block_tile_id, threadId, m, n, k);
-                
-            K_block_tile_id++;
-            __syncthreads();
+    //Move K_block tile in the matrix A and matrix B
+    size_t K_block_tile_id{0};
+    while (K_block_tile_id < K_block_tile_num) {
+        // Load A and B into block_tile,
+        // and be careful to handle BLOCK_TILE_SIZE_M != BLOCK_TILE_SIZE_N
+        //      and BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K != BLOCK_TILE_SIZE_N * BLOCK_TILE_SIZE_K
+        load_data_from_global_memory_to_shared_memory<T, BLOCK_TILE_SIZE_M, BLOCK_TILE_SIZE_N, BLOCK_TILE_SIZE_K, NUM_THREADS>(
+            A, lda, B, ldb, A_block_tile, B_block_tile, K_block_tile_id, threadId, m, n, k);
             
-            for (size_t k_block_tile_idx{0}; k_block_tile_idx < BLOCK_TILE_SIZE_K; ++k_block_tile_idx) {
-                // load data from shared memory to register
-                // Load A_block_tile into A_thread_tile
-                for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < M_thread_tile_num; ++m_thread_tile_idx) {
-                    A_thread_tile[m_thread_tile_idx] = A_block_tile[M_thread_tile_id * THREAD_TILE_SIZE_M + m_thread_tile_idx][k_block_tile_idx];
-                }
-                // Load B_block_tile into B_thread_tile
-                for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < N_thread_tile_num; ++n_thread_tile_idx) {
-                    B_thread_tile[n_thread_tile_idx] = B_block_tile[k_block_tile_idx][N_thread_tile_id * THREAD_TILE_SIZE_N + n_thread_tile_idx];
-                }
-
-                // Compute the outer product
-                for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < M_thread_tile_num; ++m_thread_tile_idx) {
-                    for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < N_thread_tile_num; ++n_thread_tile_idx) {
-                        // Compute the sum
-                        C_thread_tile[m_thread_tile_idx][n_thread_tile_idx] += A_thread_tile[m_thread_tile_idx] *
-                            B_thread_tile[n_thread_tile_idx];
-                    }
-                }
-                
-            }
-
-            __syncthreads();
-        }
+        K_block_tile_id++;
+        __syncthreads();
         
-        // Store the result
-        for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < M_thread_tile_num; ++m_thread_tile_idx) {
-            for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < N_thread_tile_num; ++n_thread_tile_idx) {
-                size_t C_idx_M{m_thread_tile_idx + M_thread_tile_id*THREAD_TILE_SIZE_M + M_block_tile_id * BLOCK_TILE_SIZE_M};
-                size_t C_idx_N{n_thread_tile_idx + N_thread_tile_id*THREAD_TILE_SIZE_N + N_block_tile_id * BLOCK_TILE_SIZE_N};
-                C[C_idx_M * ldc + C_idx_N] = C_thread_tile[m_thread_tile_idx][n_thread_tile_idx];
+        for (size_t k_block_tile_idx{0}; k_block_tile_idx < BLOCK_TILE_SIZE_K; ++k_block_tile_idx) {
+            // load data from shared memory to register
+            // Load A_block_tile into A_thread_tile
+            for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < THREAD_TILE_SIZE_M; ++m_thread_tile_idx) {
+                A_thread_tile[m_thread_tile_idx] = A_block_tile[M_thread_tile_id * THREAD_TILE_SIZE_M + m_thread_tile_idx][k_block_tile_idx];
             }
-        } 
+            // Load B_block_tile into B_thread_tile
+            for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < THREAD_TILE_SIZE_N; ++n_thread_tile_idx) {
+                B_thread_tile[n_thread_tile_idx] = B_block_tile[k_block_tile_idx][N_thread_tile_id * THREAD_TILE_SIZE_N + n_thread_tile_idx];
+            }
 
-        // C[c_row_idx * ldc + c_col_idx] = alpha * sum_thread + beta * C[c_row_idx * ldc + c_col_idx];
+            // Compute the outer product
+            for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < THREAD_TILE_SIZE_M; ++m_thread_tile_idx) {
+                for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < THREAD_TILE_SIZE_N; ++n_thread_tile_idx) {
+                    // Compute the sum
+                    C_thread_tile[m_thread_tile_idx][n_thread_tile_idx] += A_thread_tile[m_thread_tile_idx] * B_thread_tile[n_thread_tile_idx];
+                }
+            }
+            
+        }
+        __syncthreads();
     }
+    
+    // Store the result
+    for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < THREAD_TILE_SIZE_M; ++m_thread_tile_idx) {
+        for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < THREAD_TILE_SIZE_N; ++n_thread_tile_idx) {
+            size_t C_idx_M{m_thread_tile_idx + M_thread_tile_id * THREAD_TILE_SIZE_M + M_block_tile_id * BLOCK_TILE_SIZE_M};
+            size_t C_idx_N{n_thread_tile_idx + N_thread_tile_id * THREAD_TILE_SIZE_N + N_block_tile_id * BLOCK_TILE_SIZE_N};
+            if (C_idx_M < m && C_idx_N < n)
+                C[C_idx_M * ldc + C_idx_N] = alpha * C_thread_tile[m_thread_tile_idx][n_thread_tile_idx] + beta * C[C_idx_M * ldc + C_idx_N];
+        }
+    } 
 }
 
 template <typename T>
@@ -92,28 +82,27 @@ void launch_gemm_kernel_v04(size_t m, size_t n, size_t k, T const* alpha,
     // The algorithm correctness should always be guaranteed.
     constexpr unsigned int BLOCK_TILE_SIZE_M{128U};
     constexpr unsigned int BLOCK_TILE_SIZE_N{128U};
-    constexpr unsigned int BLOCK_TILE_SIZE_K{32U};
+    constexpr unsigned int BLOCK_TILE_SIZE_K{16U};
     
     constexpr unsigned int THREAD_TILE_SIZE_M{8U};
     constexpr unsigned int THREAD_TILE_SIZE_N{8U};                     
 
-    constexpr unsigned int NUM_THREADS{BLOCK_TILE_SIZE_M/THREAD_TILE_SIZE_M * BLOCK_TILE_SIZE_N/THREAD_TILE_SIZE_N};
+    constexpr unsigned int NUM_THREADS{BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_N / (THREAD_TILE_SIZE_N * THREAD_TILE_SIZE_M)};
 
     static_assert(NUM_THREADS <= 1024U);
     static_assert(BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N % NUM_THREADS == 0U);
     static_assert(BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K % NUM_THREADS == 0U);
     static_assert(BLOCK_TILE_SIZE_N % THREAD_TILE_SIZE_N == 0U);
     static_assert(BLOCK_TILE_SIZE_M % THREAD_TILE_SIZE_M == 0U);
-    static_assert(NUM_THREADS % BLOCK_TILE_SIZE_K == 0U);
-    static_assert(NUM_THREADS % BLOCK_TILE_SIZE_N == 0U);
+    static_assert(NUM_THREADS % THREAD_TILE_SIZE_M == 0U);
+    static_assert(NUM_THREADS % THREAD_TILE_SIZE_N == 0U);
 
-    dim3 const block_dim{BLOCK_TILE_SIZE_N/THREAD_TILE_SIZE_N, BLOCK_TILE_SIZE_M/THREAD_TILE_SIZE_M , 1U};
+    dim3 const block_dim{BLOCK_TILE_SIZE_N / THREAD_TILE_SIZE_N, BLOCK_TILE_SIZE_M / THREAD_TILE_SIZE_M, 1U};
     dim3 const grid_dim{
-        (static_cast<unsigned int>(n) + block_dim.x - 1U) / block_dim.x,
-        (static_cast<unsigned int>(m) + block_dim.y - 1U) / block_dim.y, 1U};
+        (static_cast<unsigned int>(n) + BLOCK_TILE_SIZE_N - 1U) / BLOCK_TILE_SIZE_N,
+        (static_cast<unsigned int>(m) + BLOCK_TILE_SIZE_M - 1U) / BLOCK_TILE_SIZE_M, 1U};
     gemm_v04<T, BLOCK_TILE_SIZE_M, BLOCK_TILE_SIZE_N, BLOCK_TILE_SIZE_K, THREAD_TILE_SIZE_M, THREAD_TILE_SIZE_N, NUM_THREADS>
-        <<<grid_dim, block_dim, 0U, stream>>>(m, n, k, *alpha, A, lda, B, ldb,
-                                              *beta, C, ldc);
+        <<<grid_dim, block_dim, 0U, stream>>>(m, n, k, *alpha, A, lda, B, ldb, *beta, C, ldc);
     CHECK_LAST_CUDA_ERROR();
 }
 

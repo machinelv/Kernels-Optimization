@@ -177,3 +177,12 @@ Effective Bandwidth: 8.42094 GB/s
 Effective TFLOPS: 8.62305 TFLOPS
 Custom GEMM VS cuBLAS GEMM Performance: 74.4443%
 ```
+
+#### v04.2
+Fix bugs:
+- The loop boundary of the register loader in v04.1 is wrong.
+- The calculation of the final C result is wrong.
+
+I used nsight compute to profile the program. According to the memory chart, my v04 main memory throughput is near the half of the reference's. I think it is main bottleneck. I will change the `load_data_from_global_memory_to_shared_memory` in the next version.
+
+![alt text](./properties/v04.1-ncu-memory_chart.png)

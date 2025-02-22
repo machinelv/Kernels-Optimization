@@ -22,7 +22,6 @@ __device__ void load_data_from_global_memory_to_shared_memory(
     
     unsigned int const A_block_tile_id{blockIdx.y};
     unsigned int const B_block_tile_id{blockIdx.x};
-    unsigned int const K_block_tile_num{(k + BLOCK_TILE_SIZE_K - 1) / BLOCK_TILE_SIZE_K};
 
     unsigned int K_block_tile_start{K_block_tile_id * BLOCK_TILE_SIZE_K};
     for (size_t thread_tile_id{thread_linear_idx * A_block_tile_thread_size}; thread_tile_id < ((thread_linear_idx + 1) * A_block_tile_thread_size); thread_tile_id++) {
