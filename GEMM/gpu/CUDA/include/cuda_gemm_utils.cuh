@@ -61,99 +61,60 @@ __device__ void load_data_from_global_memory_to_shared_memory(
 
 }
 
-template <typename T, size_t BLOCK_TILE_SIZE_X, size_t BLOCK_TILE_SIZE_Y,
-          size_t BLOCK_TILE_SIZE_K, size_t NUM_THREADS,
-          size_t BLOCK_TILE_SKEW_SIZE_X = 0U,
-          size_t BLOCK_TILE_SKEW_SIZE_Y = 0U>
+template <typename T, size_t BLOCK_TILE_SIZE_M, size_t BLOCK_TILE_SIZE_N,
+          size_t BLOCK_TILE_SIZE_K, size_t NUM_THREADS>
 __device__ void load_data_from_global_memory_to_shared_memory_transposed(
     T const* A, size_t lda, T const* B, size_t ldb,
-    T A_thread_block_tile_transposed[BLOCK_TILE_SIZE_K][BLOCK_TILE_SIZE_Y +
-                                                        BLOCK_TILE_SKEW_SIZE_Y],
-    T B_thread_block_tile[BLOCK_TILE_SIZE_K]
-                         [BLOCK_TILE_SIZE_X + BLOCK_TILE_SKEW_SIZE_X],
-    size_t thread_block_tile_idx, size_t thread_linear_idx, size_t m, size_t n,
-    size_t k)
-{
-// Load data from A on DRAM to A_thread_block_tile on shared memory.
-#pragma unroll
-    for (size_t load_idx{0U};
-         load_idx < (BLOCK_TILE_SIZE_Y * BLOCK_TILE_SIZE_K + NUM_THREADS - 1U) /
-                        NUM_THREADS;
-         ++load_idx)
-    {
-        size_t const A_thread_block_tile_row_idx{
-            (thread_linear_idx + load_idx * NUM_THREADS) / BLOCK_TILE_SIZE_K};
-        size_t const A_thread_block_tile_col_idx{
-            (thread_linear_idx + load_idx * NUM_THREADS) % BLOCK_TILE_SIZE_K};
-        size_t const A_row_idx{blockIdx.y * BLOCK_TILE_SIZE_Y +
-                               A_thread_block_tile_row_idx};
-        size_t const A_col_idx{thread_block_tile_idx * BLOCK_TILE_SIZE_K +
-                               A_thread_block_tile_col_idx};
+    T A_block_tile[BLOCK_TILE_SIZE_K][BLOCK_TILE_SIZE_M],
+    T B_block_tile[BLOCK_TILE_SIZE_K][BLOCK_TILE_SIZE_N],
+    size_t K_block_tile_id, size_t thread_linear_idx, size_t m, size_t n, size_t k) {
 
-        // These boundary checks might slow down the kernel to some extent.
-        // But they guarantee the correctness of the kernel for all
-        // different GEMM configurations.
-        T val{static_cast<T>(0)};
-        if (A_row_idx < m && A_col_idx < k)
-        {
-            val = A[A_row_idx * lda + A_col_idx];
-        }
-        // Removing the if will give another ~2 FLOPs performance on RTX
-        // 3090. But it will make the kernel incorrect for some GEMM
-        // configurations. T val{A[A_row_idx * lda + A_col_idx]}; This if
-        // will slow down the kernel. Add static asserts from the host code
-        // to guarantee this if is always true.
-        static_assert(BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_Y % NUM_THREADS ==
-                      0U);
-        // if (A_thread_block_tile_row_idx < BLOCK_TILE_SIZE_Y &&
-        //     A_thread_block_tile_col_idx < BLOCK_TILE_SIZE_K)
-        // {
-        //     A_thread_block_tile[A_thread_block_tile_row_idx]
-        //                        [A_thread_block_tile_col_idx] = val;
-        // }
-        A_thread_block_tile_transposed[A_thread_block_tile_col_idx]
-                                      [A_thread_block_tile_row_idx] = val;
-    }
-// Load data from B on DRAM to B_thread_block_tile on shared memory.
-#pragma unroll
-    for (size_t load_idx{0U};
-         load_idx < (BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_X + NUM_THREADS - 1U) /
-                        NUM_THREADS;
-         ++load_idx)
-    {
-        size_t const B_thread_block_tile_row_idx{
-            (thread_linear_idx + load_idx * NUM_THREADS) / BLOCK_TILE_SIZE_X};
-        size_t const B_thread_block_tile_col_idx{
-            (thread_linear_idx + load_idx * NUM_THREADS) % BLOCK_TILE_SIZE_X};
-        size_t const B_row_idx{thread_block_tile_idx * BLOCK_TILE_SIZE_K +
-                               B_thread_block_tile_row_idx};
-        size_t const B_col_idx{blockIdx.x * BLOCK_TILE_SIZE_X +
-                               B_thread_block_tile_col_idx};
+    // constexpr size_t A_block_tile_size{BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K};
+    // constexpr size_t A_block_tile_thread_size{(A_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
 
-        // These boundary checks might slow down the kernel to some extent.
-        // But they guarantee the correctness of the kernel for all
-        // different GEMM configurations.
-        T val{static_cast<T>(0)};
-        if (B_row_idx < k && B_col_idx < n)
-        {
-            val = B[B_row_idx * ldb + B_col_idx];
+    // constexpr size_t B_block_tile_size{BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N};
+    // constexpr size_t B_block_tile_thread_size{(B_block_tile_size + NUM_THREADS - 1) / NUM_THREADS};
+    
+    // unsigned int const A_block_tile_id{blockIdx.y};
+    // unsigned int const B_block_tile_id{blockIdx.x};
+
+    unsigned int K_block_tile_start{K_block_tile_id * BLOCK_TILE_SIZE_K};
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{thread_linear_idx + load_idx * NUM_THREADS};
+        size_t const tile_index_m{thread_tile_id / BLOCK_TILE_SIZE_K};
+        size_t const tile_index_k{thread_tile_id % BLOCK_TILE_SIZE_K};
+
+        // if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
+        size_t const A_index_m{blockIdx.y * BLOCK_TILE_SIZE_M + tile_index_m};
+        size_t const A_index_k{K_block_tile_start + tile_index_k};
+        T val{0};
+
+        if (A_index_m < m && A_index_k < k) {
+            val = A[A_index_m * lda + A_index_k];
         }
-        // Removing the if will give another ~2 FLOPs performance on RTX
-        // 3090. But it will make the kernel incorrect for some GEMM
-        // configurations. T val{B[B_row_idx * ldb + B_col_idx]}; This if
-        // will slow down the kernel. Add static asserts from the host code
-        // to guarantee this if is always true.
-        static_assert(BLOCK_TILE_SIZE_X * BLOCK_TILE_SIZE_K % NUM_THREADS ==
-                      0U);
-        // if (B_thread_block_tile_row_idx < BLOCK_TILE_SIZE_K &&
-        //     B_thread_block_tile_col_idx < BLOCK_TILE_SIZE_X)
-        // {
-        //     B_thread_block_tile[B_thread_block_tile_row_idx]
-        //                        [B_thread_block_tile_col_idx] = val;
+
+        A_block_tile[tile_index_k][tile_index_m] = val;
         // }
-        B_thread_block_tile[B_thread_block_tile_row_idx]
-                           [B_thread_block_tile_col_idx] = val;
     }
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{thread_linear_idx + load_idx * NUM_THREADS};
+        size_t const tile_index_k{thread_tile_id / BLOCK_TILE_SIZE_N};
+        size_t const tile_index_n{thread_tile_id % BLOCK_TILE_SIZE_N};
+
+        // if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
+        size_t const B_index_k{K_block_tile_start + tile_index_k};
+        size_t const B_index_n{blockIdx.x * BLOCK_TILE_SIZE_N + tile_index_n};
+        
+        T val{0};
+        if (B_index_k < k && B_index_n < n) {
+            val = B[B_index_k * ldb + B_index_n];
+        }
+        B_block_tile[tile_index_k][tile_index_n] = val;
+        // }
+    }
+
 }
 
 template <typename T, size_t BLOCK_TILE_SIZE_X, size_t BLOCK_TILE_SIZE_Y,

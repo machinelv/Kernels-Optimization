@@ -240,3 +240,32 @@ Effective Bandwidth: 10.1071 GB/s
 Effective TFLOPS: 10.3497 TFLOPS
 Custom GEMM VS cuBLAS GEMM Performance: 68.0952%
 ```
+
+#### v05.1
+
+The version 05.1 changes  matrix A's block tile's pattern by transposing it. The performance is shown below.
+
+```bash
+Matrix Size: M = 8192 N = 4096 K = 8192
+Matrix A: 8192 x 8192 Leading Dimension Size = 8192
+Matrix B: 8192 x 4096 Leading Dimension Size = 4096
+Matrix C: 8192 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V05
+cuBLAS GEMM Kernel Performance
+Latency: 34.474 ms
+Effective Bandwidth: 15.5732 GB/s
+Effective TFLOPS: 15.947 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 56.0425 ms
+Effective Bandwidth: 9.57971 GB/s
+Effective TFLOPS: 9.80962 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 61.514%
+```
+
+According to the nsight profiling result, we can find that there are heavy bank conflicts:
+- Load bank conflicts: 40%, which is the same with v04.3
+- Store bank conflicts: 88.45%, which is 0 in v04.3. 
+Therefore, we should optimize the bank conflict first. The store bank conflicts happened in loading A and B into A block tile and B block tile. 
+
+![alt text](./properties/v05.1-ncu-memory_chart.png)
