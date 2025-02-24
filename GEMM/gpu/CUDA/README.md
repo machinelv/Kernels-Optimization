@@ -16,6 +16,7 @@ The project uses the execution and timing structure of Leimao's realization. And
 - [ ] Use nsight to analyse the memory coalescing.
 - [ ] Profile v02.4
 - [ ] Profile v04.4
+- [ ] Profile v05.2
 
 ## Phase I
 
@@ -365,3 +366,67 @@ According to the nsight profiling result, we can find that there are heavy bank 
 Therefore, we should optimize the bank conflict first. The store bank conflicts happened in loading A and B into A block tile and B block tile. 
 
 ![alt text](./properties/v05.1-ncu-memory_chart.png)
+
+
+#### v05.2
+I realized the vectorized transpose shared memory load in this version. And it gains a great performance increase.
+
+```bash
+Matrix Size: M = 8192 N = 8192 K = 4096
+Matrix A: 8192 x 4096 Leading Dimension Size = 4096
+Matrix B: 4096 x 8192 Leading Dimension Size = 8192
+Matrix C: 8192 x 8192 Leading Dimension Size = 8192
+
+Custom GEMM Kernel V05
+cuBLAS GEMM Kernel Performance
+Latency: 35.8533 ms
+Effective Bandwidth: 14.9741 GB/s
+Effective TFLOPS: 15.3335 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 57.0962 ms
+Effective Bandwidth: 9.40292 GB/s
+Effective TFLOPS: 9.62859 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 62.7946%
+
+Custom GEMM Kernel V05 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 34.1944 ms
+Effective Bandwidth: 15.7005 GB/s
+Effective TFLOPS: 16.0773 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 43.2783 ms
+Effective Bandwidth: 12.4051 GB/s
+Effective TFLOPS: 12.7028 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 79.0105%
+```
+
+
+```bash
+Matrix Size: M = 4096 N = 4096 K = 4096
+Matrix A: 4096 x 4096 Leading Dimension Size = 4096
+Matrix B: 4096 x 4096 Leading Dimension Size = 4096
+Matrix C: 4096 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V05
+cuBLAS GEMM Kernel Performance
+Latency: 10.2359 ms
+Effective Bandwidth: 19.6687 GB/s
+Effective TFLOPS: 13.4271 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 16.2529 ms
+Effective Bandwidth: 12.3871 GB/s
+Effective TFLOPS: 8.45626 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 62.9788%
+
+Custom GEMM Kernel V05 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 10.2492 ms
+Effective Bandwidth: 19.6431 GB/s
+Effective TFLOPS: 13.4097 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 12.5184 ms
+Effective Bandwidth: 16.0825 GB/s
+Effective TFLOPS: 10.979 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 81.8732%
+```
+

@@ -50,3 +50,7 @@ set_target_properties(profile_cuda_gemm_fp32 PROPERTIES CUDA_ARCHITECTURES nativ
 add_executable(profile_cuda_gemm_fp16 profile_cuda_gemm_fp16.cu)
 target_link_libraries(profile_cuda_gemm_fp16 cuda_gemm CUDA::cublas)
 set_target_properties(profile_cuda_gemm_fp16 PROPERTIES CUDA_ARCHITECTURES native)
+
+# target_compile_options(cuda_gemm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+# target_compile_options(profile_cuda_gemm_fp32 PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+# target_compile_options(profile_cuda_gemm_fp16 PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
