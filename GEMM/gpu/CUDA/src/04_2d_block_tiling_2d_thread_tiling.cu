@@ -66,14 +66,16 @@ __global__ void gemm_v04(size_t m, size_t n, size_t k, T alpha, T const* A,
         }
         __syncthreads();
     }
-    
+    size_t const A_block_tile_id{blockIdx.y};
+    size_t const B_block_tile_id{blockIdx.x};
+
     // Store the result
     #pragma unroll
     for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < THREAD_TILE_SIZE_M; ++m_thread_tile_idx) {
         #pragma unroll
         for (size_t n_thread_tile_idx{0}; n_thread_tile_idx < THREAD_TILE_SIZE_N; ++n_thread_tile_idx) {
-            size_t C_idx_M{m_thread_tile_idx + M_thread_tile_index_start + blockIdx.y * BLOCK_TILE_SIZE_M};
-            size_t C_idx_N{n_thread_tile_idx + N_thread_tile_index_start + blockIdx.x * BLOCK_TILE_SIZE_N};
+            size_t C_idx_M{m_thread_tile_idx + M_thread_tile_index_start + A_block_tile_id * BLOCK_TILE_SIZE_M};
+            size_t C_idx_N{n_thread_tile_idx + N_thread_tile_index_start + B_block_tile_id * BLOCK_TILE_SIZE_N};
             if (C_idx_M < m && C_idx_N < n)
                 C[C_idx_M * ldc + C_idx_N] = alpha * C_thread_tile[m_thread_tile_idx][n_thread_tile_idx] + beta * C[C_idx_M * ldc + C_idx_N];
         }

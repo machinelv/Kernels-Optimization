@@ -14,8 +14,8 @@ int main()
     float const fp32_abs_tol{1.0e-3f};
     double const fp32_rel_tol{0.0e-4f};
 
-    constexpr size_t m{8192U};
-    constexpr size_t k{8192U};
+    constexpr size_t m{4096U};
+    constexpr size_t k{4096U};
     constexpr size_t n{4096U};
 
     constexpr size_t lda{(k + 16U - 1U) / 16U * 16U};

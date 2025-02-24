@@ -14,6 +14,8 @@ The project uses the execution and timing structure of Leimao's realization. And
 # Log
 
 - [ ] Use nsight to analyse the memory coalescing.
+- [ ] Profile v02.4
+- [ ] Profile v04.4
 
 ## Phase I
 
@@ -132,6 +134,71 @@ Custom GEMM VS cuBLAS GEMM Performance: 26.1131%
 
 We move the `load_data_from_global_memory_to_shared_memory` part into `cuda_gemm_utils.cuh` as a function.
 
+#### v02.4
+
+We realized the `load_data_from_global_memory_to_shared_memory_vectorized` by using `int4` type in CUDA. The performance is much lower than normal memory fetching method. 
+```bash
+Matrix Size: M = 4096 N = 4096 K = 4096
+Matrix A: 4096 x 4096 Leading Dimension Size = 4096
+Matrix B: 4096 x 4096 Leading Dimension Size = 4096
+Matrix C: 4096 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V02
+cuBLAS GEMM Kernel Performance
+Latency: 8.93133 ms
+Effective Bandwidth: 22.5416 GB/s
+Effective TFLOPS: 15.3884 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 44.3535 ms
+Effective Bandwidth: 4.53913 GB/s
+Effective TFLOPS: 3.09871 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 20.1367%
+
+Custom GEMM Kernel V02 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 8.9344 ms
+Effective Bandwidth: 22.5339 GB/s
+Effective TFLOPS: 15.3831 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 70.8936 ms
+Effective Bandwidth: 2.83984 GB/s
+Effective TFLOPS: 1.93867 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 12.6026%
+```
+
+```bash
+Custom GEMM Kernel V02
+cuBLAS GEMM Kernel Performance
+Latency: 34.4699 ms
+Effective Bandwidth: 15.5751 GB/s
+Effective TFLOPS: 15.9489 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 133.233 ms
+Effective Bandwidth: 4.02958 GB/s
+Effective TFLOPS: 4.12629 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 25.872%
+
+Custom GEMM Kernel V02 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 34.4709 ms
+Effective Bandwidth: 15.5746 GB/s
+Effective TFLOPS: 15.9484 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 287.039 ms
+Effective Bandwidth: 1.87037 GB/s
+Effective TFLOPS: 1.91526 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 12.0091
+```
+
+And we optimized all memory loader function in 
+- Avoid use `blockDim.x * blockDim.y` as the number of threads per block. Because it is a runtime constant and the compiler cannot optimize the loop unrolling based on that.
+
+```
+```
+
+Let's check why memory fetching is slower.
+
+
 ### v03 
 
 We skipped the realization of v03.
@@ -240,6 +307,35 @@ Effective Bandwidth: 10.1071 GB/s
 Effective TFLOPS: 10.3497 TFLOPS
 Custom GEMM VS cuBLAS GEMM Performance: 68.0952%
 ```
+
+#### v04.4 
+
+In this version, we realized the vectorized memory load (in `04_2d_block_tiling_2d_thread_tiling_vectorized_memory_access.cu`). The performance decreased to v04.3.
+
+```
+Custom GEMM Kernel V04
+cuBLAS GEMM Kernel Performance
+Latency: 8.9303 ms
+Effective Bandwidth: 22.5442 GB/s
+Effective TFLOPS: 15.3902 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 12.9915 ms
+Effective Bandwidth: 15.4968 GB/s
+Effective TFLOPS: 10.5792 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 68.7396%
+
+Custom GEMM Kernel V04 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 10.2349 ms
+Effective Bandwidth: 19.6706 GB/s
+Effective TFLOPS: 13.4285 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 17.8074 ms
+Effective Bandwidth: 11.3058 GB/s
+Effective TFLOPS: 7.7181 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 57.475
+```
+
 
 #### v05.1
 
