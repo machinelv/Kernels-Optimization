@@ -493,3 +493,22 @@ The memory access pattern for shared stores might not be optimal and causes on a
 Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only issues an instruction every 2.4 cycles. This might leave hardware resources underutilized and may lead to less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of 2.00 active warps per scheduler, but only an average of 0.75 warps were eligible per cycle. Eligible warps are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible warp results in no instruction being issued and the issue slot remains unused. To increase the number of eligible warps, avoid possible load imbalances due to highly different execution durations per warp. Reducing stalls indicated on the  Warp State Statistics and  Source Counters sections can help, too.
 ```
 
+#### v06.3
+- Improve the kernel `gemm_v06_vectorized_double_buffered`'s performance.
+I changed the global memory load process. From `global to shared directly` to `global to register & register to shared`. The new method partition the old `global to shared directly` (which passes by the `register`) to two steps. It likes a manual asynchronies global memory to shared memory, which is realized in Ampere architecture. 
+
+```bash
+
+cuBLAS GEMM Kernel Performance
+Latency: 12.1795 ms
+Effective Bandwidth: 16.53 GB/s
+Effective TFLOPS: 11.2845 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 14.0524 ms
+Effective Bandwidth: 14.3269 GB/s
+Effective TFLOPS: 9.78049 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 86.672%
+
+```
+
+However, the `gemm_v06_vectorized_double_buffered` and `gemm_v06_vectorized` kernels still don't support `fp16`  and change the `block_tile_size`.
