@@ -144,44 +144,22 @@ __global__ void gemm_v06_vectorized_double_buffered(size_t m, size_t n, size_t k
             size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
             size_t const tile_index_m{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_K};
             size_t const tile_index_k{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_K) * NUM_VECTOR_UNITS};
-    
             size_t const A_index_m{A_block_tile_id * BLOCK_TILE_SIZE_M + tile_index_m};
             size_t const A_index_k{K_block_tile_start + tile_index_k};
-    
-            int4 A_row_vector_vals{0, 0, 0, 0};
-            if (A_index_m < m && A_index_k < k) {
-                A_row_vector_vals = *reinterpret_cast<int4 const*>(&A[A_index_m * lda + A_index_k]);
-            }
-            if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
-                for (size_t i{0U}; i < NUM_VECTOR_UNITS; ++i) {
-                    A_block_tile[write_stage_idx][tile_index_k + i][tile_index_m] = reinterpret_cast<T const*>(&A_row_vector_vals)[i];
-                }
-            }
+            *reinterpret_cast<int4*>(&A_block_tile_reg[load_idx * NUM_VECTOR_UNITS]) = *reinterpret_cast<int4 const*>(&A[A_index_m * lda + A_index_k]);
         }
-
-
+    
         #pragma unroll
         for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * VECTORIZED_BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
             size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
             size_t const tile_index_k{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_N};
             size_t const tile_index_n{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_N) * NUM_VECTOR_UNITS};
-    
             size_t const B_index_k{K_block_tile_start + tile_index_k};
             size_t const B_index_n{B_block_tile_id * BLOCK_TILE_SIZE_N + tile_index_n};
             
-            int4 B_row_vector_vals{0, 0, 0, 0};
-            if (B_index_k < k && B_index_n < n) {
-                B_row_vector_vals = *reinterpret_cast<int4 const*>(&B[B_index_k * ldb + B_index_n]);
-            }
-    
-            if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
-                *reinterpret_cast<int4*>(&B_block_tile[write_stage_idx][tile_index_k][tile_index_n]) = B_row_vector_vals;
-            }
+            *reinterpret_cast<int4*>(&B_block_tile_reg[load_idx * NUM_VECTOR_UNITS]) = *reinterpret_cast<int4 const*>(&B[B_index_k * ldb + B_index_n]);
         }
-        
-        write_stage_idx ^= 1;
 
-        __syncthreads();
         #pragma unroll
         for (size_t k_block_tile_idx{1}; k_block_tile_idx < BLOCK_TILE_SIZE_K; ++k_block_tile_idx) {
             // load data from shared memory to register
@@ -209,6 +187,34 @@ __global__ void gemm_v06_vectorized_double_buffered(size_t m, size_t n, size_t k
         }
 
         /**************Tail Process**************/
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * VECTORIZED_BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_m{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_K};
+            size_t const tile_index_k{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_K) * NUM_VECTOR_UNITS};
+    
+            if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
+                for (size_t i{0U}; i < NUM_VECTOR_UNITS; ++i) {
+                    A_block_tile[write_stage_idx][tile_index_k + i][tile_index_m] = A_block_tile_reg[load_idx * NUM_VECTOR_UNITS + i];
+                }
+            }
+        }
+
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * VECTORIZED_BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_k{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_N};
+            size_t const tile_index_n{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_N) * NUM_VECTOR_UNITS};
+
+            if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
+                *reinterpret_cast<int4*>(&B_block_tile[write_stage_idx][tile_index_k][tile_index_n]) = *reinterpret_cast<int4 const*>(&B_block_tile_reg[load_idx * NUM_VECTOR_UNITS]);;
+            }
+        }
+
+        __syncthreads();
+
+        write_stage_idx ^= 1;
+
 
         // Compute the outer product
         for (size_t m_thread_tile_idx{0}; m_thread_tile_idx < THREAD_TILE_SIZE_M; ++m_thread_tile_idx) {
