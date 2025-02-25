@@ -430,3 +430,36 @@ Effective TFLOPS: 10.979 TFLOPS
 Custom GEMM VS cuBLAS GEMM Performance: 81.8732%
 ```
 
+
+```txt
+The memory access pattern for shared loads might not be optimal and causes on average a 5.1 - way bank conflict across all 134217728 shared load requests.This results in 287350070 bank conflicts, which represent 41.65% of the overall 689958048 wavefronts for shared loads. Check the  Source Counters section for uncoalesced shared loads.
+
+The memory access pattern for shared stores might not be optimal and causes on average a 4.1 - way bank conflict across all 20971520 shared store requests.This results in 52415886 bank conflicts, which represent 60.97% of the overall 85966000 wavefronts for shared stores. Check the  Source Counters section for uncoalesced shared stores.
+```
+
+#### v06.1
+
+In version 6.1, we realize the warp partition to avoid the bank load conflicts. 
+
+```bash
+Matrix Size: M = 4096 N = 4096 K = 4096
+Matrix A: 4096 x 4096 Leading Dimension Size = 4096
+Matrix B: 4096 x 4096 Leading Dimension Size = 4096
+Matrix C: 4096 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V06 Vectorized
+cuBLAS GEMM Kernel Performance
+Latency: 12.1774 ms
+Effective Bandwidth: 16.5328 GB/s
+Effective TFLOPS: 11.2864 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 14.4916 ms
+Effective Bandwidth: 13.8926 GB/s
+Effective TFLOPS: 9.48401 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 84.0305%
+```
+
+```txt
+The memory access pattern for shared stores might not be optimal and causes on average a 4.1 - way bank conflict across all 20971520 shared store requests.This results in 52218251 bank conflicts, which represent 60.87% of the overall 85787021 wavefronts for shared stores. Check the  Source Counters section for uncoalesced shared stores.
+```
+
