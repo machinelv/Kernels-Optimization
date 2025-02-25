@@ -66,6 +66,8 @@ __global__ void gemm_v06_vectorized_double_buffered(size_t m, size_t n, size_t k
     T C_thread_tile[THREAD_TILE_SIZE_M][THREAD_TILE_SIZE_N] = {static_cast<T>(0)};
     T A_thread_tile[2][THREAD_TILE_SIZE_M] = {static_cast<T>(0)};
     T B_thread_tile[2][THREAD_TILE_SIZE_N] = {static_cast<T>(0)};
+    T A_block_tile_reg[BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K / NUM_THREADS];
+    T B_block_tile_reg[BLOCK_TILE_SIZE_N * BLOCK_TILE_SIZE_K / NUM_THREADS];
 
 
     constexpr size_t VECTORIZED_BLOCK_TILE_SIZE_K{BLOCK_TILE_SIZE_K / NUM_VECTOR_UNITS};
