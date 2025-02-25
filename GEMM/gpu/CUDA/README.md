@@ -439,7 +439,8 @@ The memory access pattern for shared stores might not be optimal and causes on a
 
 #### v06.1
 
-In version 6.1, we realize the warp partition to avoid the bank load conflicts. 
+In version 6.1, we realize the warp partition to avoid the bank load conflicts. Thera are still bugs:
+- The M and N block tile size are fixed.
 
 ```bash
 Matrix Size: M = 4096 N = 4096 K = 4096
@@ -461,5 +462,34 @@ Custom GEMM VS cuBLAS GEMM Performance: 84.0305%
 
 ```txt
 The memory access pattern for shared stores might not be optimal and causes on average a 4.1 - way bank conflict across all 20971520 shared store requests.This results in 52218251 bank conflicts, which represent 60.87% of the overall 85787021 wavefronts for shared stores. Check the  Source Counters section for uncoalesced shared stores.
+```
+
+#### v06.2
+
+I realized double buffer here. And the performance fells down to 76.87%. Thera are still bugs:
+- The M and N block tile size are fixed.
+
+```bash
+Matrix Size: M = 4096 N = 4096 K = 4096
+Matrix A: 4096 x 4096 Leading Dimension Size = 4096
+Matrix B: 4096 x 4096 Leading Dimension Size = 4096
+Matrix C: 4096 x 4096 Leading Dimension Size = 4096
+
+Custom GEMM Kernel V06 Vectorized Double Buffered
+cuBLAS GEMM Kernel Performance
+Latency: 12.1764 ms
+Effective Bandwidth: 16.5342 GB/s
+Effective TFLOPS: 11.2873 TFLOPS
+Custom GEMM Kernel Performance
+Latency: 15.8402 ms
+Effective Bandwidth: 12.7098 GB/s
+Effective TFLOPS: 8.67658 TFLOPS
+Custom GEMM VS cuBLAS GEMM Performance: 76.87%
+```
+
+```
+The memory access pattern for shared stores might not be optimal and causes on average a 4.1 - way bank conflict across all 21053440 shared store requests.This results in 52249233 bank conflicts, which represent 60.76% of the overall 85995226 wavefronts for shared stores. Check the  Source Counters section for uncoalesced shared stores.
+
+Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only issues an instruction every 2.4 cycles. This might leave hardware resources underutilized and may lead to less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of 2.00 active warps per scheduler, but only an average of 0.75 warps were eligible per cycle. Eligible warps are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible warp results in no instruction being issued and the issue slot remains unused. To increase the number of eligible warps, avoid possible load imbalances due to highly different execution durations per warp. Reducing stalls indicated on the  Warp State Statistics and  Source Counters sections can help, too.
 ```
 
