@@ -335,42 +335,6 @@ void launch_gemm_kernel_v07_vectorized_double_buffered(
 {
     // Feel free to play with the block tile sizes.
     // The algorithm correctness should always be guaranteed.
-    constexpr unsigned int BLOCK_TILE_SIZE_X{128U};
-    constexpr unsigned int BLOCK_TILE_SIZE_Y{128U};
-    constexpr unsigned int BLOCK_TILE_SIZE_K{16U};
-
-    // The skew size is used to avoid bank conflicts in shared memory.
-    constexpr size_t BLOCK_TILE_SKEW_SIZE_X{16U};
-    constexpr size_t BLOCK_TILE_SKEW_SIZE_Y{16U};
-
-    constexpr unsigned int WARP_TILE_SIZE_X{32U};
-    constexpr unsigned int WARP_TILE_SIZE_Y{64U};
-    constexpr unsigned int NUM_WARPS_X{BLOCK_TILE_SIZE_X / WARP_TILE_SIZE_X};
-    constexpr unsigned int NUM_WARPS_Y{BLOCK_TILE_SIZE_Y / WARP_TILE_SIZE_Y};
-    static_assert(BLOCK_TILE_SIZE_X % WARP_TILE_SIZE_X == 0U);
-    static_assert(BLOCK_TILE_SIZE_Y % WARP_TILE_SIZE_Y == 0U);
-
-    constexpr unsigned int WMMA_TILE_SIZE_X{16U};
-    constexpr unsigned int WMMA_TILE_SIZE_Y{16U};
-    constexpr unsigned int WMMA_TILE_SIZE_K{16U};
-
-    constexpr unsigned int NUM_THREADS_PER_BLOCK{NUM_WARPS_X * NUM_WARPS_Y *
-                                                 32U};
-
-    dim3 const block_dim{NUM_THREADS_PER_BLOCK, 1U, 1U};
-    dim3 const grid_dim{
-        (static_cast<unsigned int>(n) + BLOCK_TILE_SIZE_X - 1U) /
-            BLOCK_TILE_SIZE_X,
-        (static_cast<unsigned int>(m) + BLOCK_TILE_SIZE_Y - 1U) /
-            BLOCK_TILE_SIZE_Y,
-        1U};
-    gemm_v07_vectorized_double_buffered<
-        T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-        BLOCK_TILE_SKEW_SIZE_X, BLOCK_TILE_SKEW_SIZE_Y, WARP_TILE_SIZE_X,
-        WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K,
-        NUM_THREADS_PER_BLOCK><<<grid_dim, block_dim, 0U, stream>>>(
-        m, n, k, *alpha, A, lda, B, ldb, *beta, C, ldc);
-    CHECK_LAST_CUDA_ERROR();
 }
 
 // Explicit instantiation.

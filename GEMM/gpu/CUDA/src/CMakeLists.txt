@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.27)
 
 project(CUDA-GEMM-Algorithms VERSION 0.0.1 LANGUAGES CXX CUDA)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find CUDA Toolkit
