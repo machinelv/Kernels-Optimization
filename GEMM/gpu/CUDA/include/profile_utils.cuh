@@ -244,7 +244,11 @@ void random_initialize_matrix(T* A, size_t m, size_t n, size_t lda,
     {
         for (size_t j{0U}; j < n; ++j)
         {
-            A[i * lda + j] = static_cast<T>(rand());
+            // A[i * lda + j] = static_cast<T>(rand());
+            if (i == j)
+                A[i * lda + j] = 1;
+            else 
+                A[i * lda + j] = 0;
         }
     }
 }

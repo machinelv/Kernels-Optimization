@@ -5,336 +5,289 @@
 #include "cuda_gemm_utils.cuh"
 #include "cuda_gemm_utils.hpp"
 
-// https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/
-// https://github.com/NVIDIA/cutlass/blob/b7508e337938137a699e486d8997646980acfc58/media/docs/programming_guidelines.md
 
-template <
-    typename T, size_t BLOCK_TILE_SIZE_X, size_t BLOCK_TILE_SIZE_Y,
-    size_t BLOCK_TILE_SIZE_K, size_t WARP_TILE_SIZE_X, size_t WARP_TILE_SIZE_Y,
-    size_t WMMA_TILE_SIZE_X, size_t WMMA_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_K,
-    size_t NUM_WMMA_TILES_X, size_t NUM_WMMA_TILES_Y, size_t NUM_WMMA_TILES_K,
-    size_t BLOCK_TILE_SKEW_SIZE_X, size_t BLOCK_TILE_SKEW_SIZE_Y>
-__device__ void process_data_from_shared_memory_using_wmma(
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T,
-                           nvcuda::wmma::col_major>
-        a_frags[NUM_WMMA_TILES_Y],
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T,
-                           nvcuda::wmma::row_major>
-        b_frags[NUM_WMMA_TILES_X],
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T>
-        acc_frags[NUM_WMMA_TILES_Y][NUM_WMMA_TILES_X],
-    T const A_thread_block_tile_transposed[BLOCK_TILE_SIZE_K]
-                                          [BLOCK_TILE_SIZE_Y +
-                                           BLOCK_TILE_SKEW_SIZE_Y],
-    T const B_thread_block_tile[BLOCK_TILE_SIZE_K]
-                               [BLOCK_TILE_SIZE_X + BLOCK_TILE_SKEW_SIZE_X],
-    size_t warp_row_idx, size_t warp_col_idx)
-{
-#pragma unroll
-    for (size_t k_i{0U}; k_i < NUM_WMMA_TILES_K; ++k_i)
-    {
-#pragma unroll
-        for (size_t wmma_tile_row_idx{0U}; wmma_tile_row_idx < NUM_WMMA_TILES_Y;
-             ++wmma_tile_row_idx)
-        {
-            nvcuda::wmma::load_matrix_sync(
-                a_frags[wmma_tile_row_idx],
-                &A_thread_block_tile_transposed[k_i * WMMA_TILE_SIZE_K]
-                                               [warp_row_idx *
-                                                    WARP_TILE_SIZE_Y +
-                                                wmma_tile_row_idx *
-                                                    WMMA_TILE_SIZE_Y],
-                BLOCK_TILE_SIZE_Y + BLOCK_TILE_SKEW_SIZE_Y);
-        }
-#pragma unroll
-        for (size_t wmma_tile_col_idx{0U}; wmma_tile_col_idx < NUM_WMMA_TILES_X;
-             ++wmma_tile_col_idx)
-        {
-            nvcuda::wmma::load_matrix_sync(
-                b_frags[wmma_tile_col_idx],
-                &B_thread_block_tile[k_i * WMMA_TILE_SIZE_K]
-                                    [warp_col_idx * WARP_TILE_SIZE_X +
-                                     wmma_tile_col_idx * WMMA_TILE_SIZE_X],
-                BLOCK_TILE_SIZE_X + BLOCK_TILE_SKEW_SIZE_X);
-        }
-#pragma unroll
-        for (size_t wmma_tile_row_idx{0U}; wmma_tile_row_idx < NUM_WMMA_TILES_Y;
-             ++wmma_tile_row_idx)
-        {
-#pragma unroll
-            for (size_t wmma_tile_col_idx{0U};
-                 wmma_tile_col_idx < NUM_WMMA_TILES_X; ++wmma_tile_col_idx)
-            {
-                // Perform the matrix multiplication.
-                nvcuda::wmma::mma_sync(
-                    acc_frags[wmma_tile_row_idx][wmma_tile_col_idx],
-                    a_frags[wmma_tile_row_idx], b_frags[wmma_tile_col_idx],
-                    acc_frags[wmma_tile_row_idx][wmma_tile_col_idx]);
-            }
-        }
-    }
-}
+using namespace nvcuda;
 
 // GEMM kernel v07.
 // Each thread in the block processes THREAD_TILE_SIZE_Y *
 // THREAD_TILE_SIZE_X output values. Number of threads BLOCK_TILE_SIZE_Y *
 // BLOCK_TILE_SIZE_X / (THREAD_TILE_SIZE_Y * THREAD_TILE_SIZE_X)
-template <typename T, size_t BLOCK_TILE_SIZE_X, size_t BLOCK_TILE_SIZE_Y,
-          size_t BLOCK_TILE_SIZE_K, size_t BLOCK_TILE_SKEW_SIZE_X,
-          size_t BLOCK_TILE_SKEW_SIZE_Y, size_t WARP_TILE_SIZE_X,
-          size_t WARP_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_X,
-          size_t WMMA_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_K, size_t NUM_THREADS>
-__global__ void
-gemm_v07_vectorized_double_buffered(size_t m, size_t n, size_t k, T alpha,
+template <typename T, size_t BLOCK_TILE_SIZE_M, size_t BLOCK_TILE_SIZE_N, size_t BLOCK_TILE_SIZE_K, 
+            size_t WMMA_TILE_SIZE_M, size_t WMMA_TILE_SIZE_N, size_t WMMA_TILE_SIZE_K,
+          size_t WMMA_TILE_NUM_M, size_t WMMA_TILE_NUM_N, size_t NUM_THREADS>
+__global__ void launch_gemm_kernel_v07_vectorized_double_buffered(size_t m, size_t n, size_t k, T alpha,
                                     T const* A, size_t lda, T const* B,
-                                    size_t ldb, T beta, T* C, size_t ldc)
+                                    size_t ldb, T beta, T* C, size_t ldc) 
 {
-    constexpr size_t NUM_WARPS_X{BLOCK_TILE_SIZE_X / WARP_TILE_SIZE_X};
-    constexpr size_t NUM_WARPS_Y{BLOCK_TILE_SIZE_Y / WARP_TILE_SIZE_Y};
-    static_assert(BLOCK_TILE_SIZE_X % WARP_TILE_SIZE_X == 0U);
-    static_assert(BLOCK_TILE_SIZE_Y % WARP_TILE_SIZE_Y == 0U);
+    size_t constexpr WARP_SIZE = 32;
+    size_t constexpr WARP_NUM{NUM_THREADS / WARP_SIZE};
+    size_t const threadId{threadIdx.y * blockDim.x + threadIdx.x};
+    size_t const warp_id = threadId / WARP_SIZE;
+    size_t const lane_id = threadId % WARP_SIZE;
 
-    constexpr size_t NUM_WMMA_TILES_X{WARP_TILE_SIZE_X / WMMA_TILE_SIZE_X};
-    static_assert(WARP_TILE_SIZE_X % WMMA_TILE_SIZE_X == 0U);
-    constexpr size_t NUM_WMMA_TILES_Y{WARP_TILE_SIZE_Y / WMMA_TILE_SIZE_Y};
-    static_assert(WARP_TILE_SIZE_Y % WMMA_TILE_SIZE_Y == 0U);
-    constexpr size_t NUM_WMMA_TILES_K{BLOCK_TILE_SIZE_K / WMMA_TILE_SIZE_K};
-    static_assert(BLOCK_TILE_SIZE_K % WMMA_TILE_SIZE_K == 0U);
+    constexpr size_t NUM_VECTOR_UNITS{sizeof(int4) / sizeof(T)};
+    static_assert(sizeof(int4) % sizeof(T) == 0U);
+    static_assert(BLOCK_TILE_SIZE_K % NUM_VECTOR_UNITS == 0U);
+    static_assert(BLOCK_TILE_SIZE_N % NUM_VECTOR_UNITS == 0U);
 
-    constexpr size_t NUM_PIPELINES{2U};
-    // Only double buffer is supported in the implementation.
-    // But even more number of pipelines can be supported if the implementation
-    // is modified.
-    static_assert(NUM_PIPELINES == 2U);
-    static_assert((NUM_WARPS_X * NUM_WARPS_Y) % NUM_PIPELINES == 0U);
-    static_assert(NUM_THREADS % NUM_PIPELINES == 0U);
-    constexpr size_t NUM_THREADS_PER_PIPELINE{NUM_THREADS / NUM_PIPELINES};
-    constexpr size_t NUM_WARPS_PER_PIPELINE{(NUM_WARPS_X * NUM_WARPS_Y) /
-                                            NUM_PIPELINES};
+    size_t const APAD = 0;
+    size_t const BPAD = 0;
+    
+    __shared__ T A_block_tile[2][BLOCK_TILE_SIZE_M][BLOCK_TILE_SIZE_K + APAD];
+    __shared__ T B_block_tile[2][BLOCK_TILE_SIZE_K][BLOCK_TILE_SIZE_N + BPAD];
 
-    // Cache a tile of A and B in shared memory for data reuse.
-    __shared__ T
-        A_thread_block_tile_transposed[NUM_PIPELINES][BLOCK_TILE_SIZE_K]
-                                      [BLOCK_TILE_SIZE_Y +
-                                       BLOCK_TILE_SKEW_SIZE_Y];
-    __shared__ T
-        B_thread_block_tile[NUM_PIPELINES][BLOCK_TILE_SIZE_K]
-                           [BLOCK_TILE_SIZE_X + BLOCK_TILE_SKEW_SIZE_X];
+    T A_block_tile_reg[BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K / NUM_THREADS];
+    T B_block_tile_reg[BLOCK_TILE_SIZE_N * BLOCK_TILE_SIZE_K / NUM_THREADS];
 
-    // Declare the fragments.
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T,
-                           nvcuda::wmma::col_major>
-        a_frags[NUM_WMMA_TILES_Y];
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T,
-                           nvcuda::wmma::row_major>
-        b_frags[NUM_WMMA_TILES_X];
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T>
-        acc_frags[NUM_WMMA_TILES_Y][NUM_WMMA_TILES_X];
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_TILE_SIZE_Y,
-                           WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_K, T>
-        c_frag;
 
-// Make sure the accumulator starts from 0.
-#pragma unroll
-    for (size_t wmma_tile_row_idx{0U}; wmma_tile_row_idx < NUM_WMMA_TILES_Y;
-         ++wmma_tile_row_idx)
-    {
-        for (size_t wmma_tile_col_idx{0U}; wmma_tile_col_idx < NUM_WMMA_TILES_X;
-             ++wmma_tile_col_idx)
-        {
-            nvcuda::wmma::fill_fragment(
-                acc_frags[wmma_tile_row_idx][wmma_tile_col_idx],
-                static_cast<T>(0));
+    constexpr size_t VECTORIZED_BLOCK_TILE_SIZE_K{BLOCK_TILE_SIZE_K / NUM_VECTOR_UNITS};
+    constexpr size_t VECTORIZED_BLOCK_TILE_SIZE_N{BLOCK_TILE_SIZE_N / NUM_VECTOR_UNITS};
+    
+    size_t const A_block_tile_id{blockIdx.y};
+    size_t const B_block_tile_id{blockIdx.x};
+
+    size_t const comp_c_frag_m{warp_id & 1};
+    size_t const comp_c_frag_n{warp_id >> 1};
+
+    wmma::fragment<wmma::matrix_a, WMMA_TILE_SIZE_M, WMMA_TILE_SIZE_K, WMMA_TILE_SIZE_N, T, wmma::row_major> frag_a[2][2][WMMA_TILE_NUM_M];
+    wmma::fragment<wmma::matrix_b, WMMA_TILE_SIZE_M, WMMA_TILE_SIZE_K, WMMA_TILE_SIZE_N, T, wmma::row_major> frag_b[2][2][WMMA_TILE_NUM_N];
+    wmma::fragment<wmma::accumulator, WMMA_TILE_SIZE_M, WMMA_TILE_SIZE_K, WMMA_TILE_SIZE_N, T> frag_c[WMMA_TILE_NUM_M][WMMA_TILE_NUM_N];
+
+    for (size_t m_wmma_tile_idx{0}; m_wmma_tile_idx < WMMA_TILE_NUM_M; ++m_wmma_tile_idx) {
+        for (size_t n_wmma_tile_idx{0}; n_wmma_tile_idx < WMMA_TILE_NUM_N; ++n_wmma_tile_idx) {
+            wmma::fill_fragment(frag_c[m_wmma_tile_idx][n_wmma_tile_idx], static_cast<T>(0.0f));
         }
     }
 
-    size_t const thread_linear_idx{threadIdx.y * blockDim.x + threadIdx.x};
-    size_t const warp_linear_idx{thread_linear_idx / 32U};
-    size_t const warp_row_idx{warp_linear_idx / NUM_WARPS_X};
-    size_t const warp_col_idx{warp_linear_idx % NUM_WARPS_X};
-    // Separate the warps to different pipelines.
-    size_t const pipeline_index{warp_linear_idx / NUM_WARPS_PER_PIPELINE};
+    /****Pre Load Data****/
 
-    // Number of outer loops to perform the sum of inner products.
-    // C_thread_block_tile =
-    // \sigma_{thread_block_tile_idx=0}^{num_thread_block_tiles-1} A[:,
-    // thread_block_tile_idx:BLOCK_TILE_SIZE_K] *
-    // B[thread_block_tile_idx:BLOCK_TILE_SIZE_K, :]
-    size_t const num_thread_block_tiles{(k + BLOCK_TILE_SIZE_K - 1) /
-                                        BLOCK_TILE_SIZE_K};
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * VECTORIZED_BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+        size_t const tile_index_m{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_K};
+        size_t const tile_index_k{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_K) * NUM_VECTOR_UNITS};
 
-    if (pipeline_index == 0U)
-    {
-        // Pipeline 0 warps load buffer 0.
-        load_data_from_global_memory_to_shared_memory_transposed_vectorized<
-            T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-            NUM_THREADS_PER_PIPELINE, BLOCK_TILE_SKEW_SIZE_X,
-            BLOCK_TILE_SKEW_SIZE_Y>(
-            A, lda, B, ldb, A_thread_block_tile_transposed[pipeline_index],
-            B_thread_block_tile[pipeline_index], 0U,
-            thread_linear_idx - pipeline_index * NUM_THREADS_PER_PIPELINE, m, n,
-            k);
+        size_t const A_index_m{A_block_tile_id * BLOCK_TILE_SIZE_M + tile_index_m};
+        size_t const A_index_k{tile_index_k};
+
+        int4 A_row_vector_vals{0, 0, 0, 0};
+        if (A_index_m < m && A_index_k < k) {
+            A_row_vector_vals = *reinterpret_cast<int4 const*>(&A[A_index_m * lda + A_index_k]);
+        }
+        if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
+            *reinterpret_cast<int4*>(&A_block_tile[0][tile_index_m][tile_index_k]) = A_row_vector_vals;
+        }
     }
+
+    #pragma unroll
+    for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * VECTORIZED_BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+        size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+        size_t const tile_index_k{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_N};
+        size_t const tile_index_n{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_N) * NUM_VECTOR_UNITS};
+
+        size_t const B_index_k{tile_index_k};
+        size_t const B_index_n{B_block_tile_id * BLOCK_TILE_SIZE_N + tile_index_n};
+        
+        int4 B_row_vector_vals{0, 0, 0, 0};
+        if (B_index_k < k && B_index_n < n) {
+            B_row_vector_vals = *reinterpret_cast<int4 const*>(&B[B_index_k * ldb + B_index_n]);
+        }
+        if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
+            *reinterpret_cast<int4*>(&B_block_tile[0][tile_index_k][tile_index_n]) = B_row_vector_vals;
+        }
+    }
+
     __syncthreads();
+    
+    wmma::load_matrix_sync(frag_a[0][0][0], &A_block_tile[0][comp_c_frag_m * 64     ][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][0][1], &A_block_tile[0][comp_c_frag_m * 64 + 16][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][0][2], &A_block_tile[0][comp_c_frag_m * 64 + 32][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][0][3], &A_block_tile[0][comp_c_frag_m * 64 + 48][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][1][0], &A_block_tile[0][comp_c_frag_m * 64     ][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][1][1], &A_block_tile[0][comp_c_frag_m * 64 + 16][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][1][2], &A_block_tile[0][comp_c_frag_m * 64 + 32][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[0][1][3], &A_block_tile[0][comp_c_frag_m * 64 + 48][16], BLOCK_TILE_SIZE_K + APAD);
 
-    for (size_t thread_block_tile_idx{0U};
-         thread_block_tile_idx < num_thread_block_tiles;
-         thread_block_tile_idx += NUM_PIPELINES)
-    {
-        if (pipeline_index == 0U)
-        {
-            // Pipeline 0 warps process buffer 0.
-            process_data_from_shared_memory_using_wmma<
-                T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                WARP_TILE_SIZE_X, WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X,
-                WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K, NUM_WMMA_TILES_X,
-                NUM_WMMA_TILES_Y, NUM_WMMA_TILES_K, BLOCK_TILE_SKEW_SIZE_X,
-                BLOCK_TILE_SKEW_SIZE_Y>(
-                a_frags, b_frags, acc_frags,
-                A_thread_block_tile_transposed[pipeline_index],
-                B_thread_block_tile[pipeline_index], warp_row_idx,
-                warp_col_idx);
-            __syncthreads();
+    wmma::load_matrix_sync(frag_b[0][0][0], &B_block_tile[0][ 0][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][0][1], &B_block_tile[0][ 0][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][0][2], &B_block_tile[0][ 0][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][0][3], &B_block_tile[0][ 0][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][1][0], &B_block_tile[0][16][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][1][1], &B_block_tile[0][16][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][1][2], &B_block_tile[0][16][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[0][1][3], &B_block_tile[0][16][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+    
 
-            // Pipeline 0 warps process buffer 1.
-            if (thread_block_tile_idx + 1U < num_thread_block_tiles)
-            {
-                process_data_from_shared_memory_using_wmma<
-                    T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                    WARP_TILE_SIZE_X, WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X,
-                    WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K, NUM_WMMA_TILES_X,
-                    NUM_WMMA_TILES_Y, NUM_WMMA_TILES_K, BLOCK_TILE_SKEW_SIZE_X,
-                    BLOCK_TILE_SKEW_SIZE_Y>(
-                    a_frags, b_frags, acc_frags,
-                    A_thread_block_tile_transposed[pipeline_index + 1],
-                    B_thread_block_tile[pipeline_index + 1], warp_row_idx,
-                    warp_col_idx);
-            }
-            __syncthreads();
+    /**** MAIN LOOP ****/
+    unsigned int write_stage_idx{1};
 
-            // Pipeline 0 warps load buffer 0.
-            if (thread_block_tile_idx + 2U < num_thread_block_tiles)
-            {
-                load_data_from_global_memory_to_shared_memory_transposed_vectorized<
-                    T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                    NUM_THREADS_PER_PIPELINE, BLOCK_TILE_SKEW_SIZE_X,
-                    BLOCK_TILE_SKEW_SIZE_Y>(
-                    A, lda, B, ldb,
-                    A_thread_block_tile_transposed[pipeline_index],
-                    B_thread_block_tile[pipeline_index],
-                    thread_block_tile_idx + 2,
-                    thread_linear_idx -
-                        pipeline_index * NUM_THREADS_PER_PIPELINE,
-                    m, n, k);
-            }
-            __syncthreads();
+    //Move K_block tile in the matrix A and matrix B
+    for (size_t K_block_tile_id{0}; K_block_tile_id < (k + BLOCK_TILE_SIZE_K - 1) / BLOCK_TILE_SIZE_K; K_block_tile_id++) {
+        // Load A and B into block_tile,
+        // and be careful to handle BLOCK_TILE_SIZE_M != BLOCK_TILE_SIZE_N
+        //      and BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K != BLOCK_TILE_SIZE_N * BLOCK_TILE_SIZE_K
+        unsigned int load_stage_idx{write_stage_idx^1};
+        size_t const K_block_tile_start{(K_block_tile_id + 1) * BLOCK_TILE_SIZE_K};
+
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * VECTORIZED_BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_m{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_K};
+            size_t const tile_index_k{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_K) * NUM_VECTOR_UNITS};
+            size_t const A_index_m{A_block_tile_id * BLOCK_TILE_SIZE_M + tile_index_m};
+            size_t const A_index_k{K_block_tile_start + tile_index_k};
+            *reinterpret_cast<int4*>(&A_block_tile_reg[load_idx * NUM_VECTOR_UNITS]) = *reinterpret_cast<int4 const*>(&A[A_index_m * lda + A_index_k]);
         }
-        else
-        {
-            // Pipeline 1 warps load buffer 1.
-            if (thread_block_tile_idx + 1U < num_thread_block_tiles)
-            {
-                load_data_from_global_memory_to_shared_memory_transposed_vectorized<
-                    T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                    NUM_THREADS_PER_PIPELINE, BLOCK_TILE_SKEW_SIZE_X,
-                    BLOCK_TILE_SKEW_SIZE_Y>(
-                    A, lda, B, ldb,
-                    A_thread_block_tile_transposed[pipeline_index],
-                    B_thread_block_tile[pipeline_index],
-                    thread_block_tile_idx + 1,
-                    thread_linear_idx -
-                        pipeline_index * NUM_THREADS_PER_PIPELINE,
-                    m, n, k);
-            }
-            __syncthreads();
+    
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * VECTORIZED_BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_k{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_N};
+            size_t const tile_index_n{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_N) * NUM_VECTOR_UNITS};
+            size_t const B_index_k{K_block_tile_start + tile_index_k};
+            size_t const B_index_n{B_block_tile_id * BLOCK_TILE_SIZE_N + tile_index_n};
+            
+            *reinterpret_cast<int4*>(&B_block_tile_reg[load_idx * NUM_VECTOR_UNITS]) = *reinterpret_cast<int4 const*>(&B[B_index_k * ldb + B_index_n]);
+        }
 
-            // Pipeline 1 warps process buffer 0.
-            process_data_from_shared_memory_using_wmma<
-                T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                WARP_TILE_SIZE_X, WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X,
-                WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K, NUM_WMMA_TILES_X,
-                NUM_WMMA_TILES_Y, NUM_WMMA_TILES_K, BLOCK_TILE_SKEW_SIZE_X,
-                BLOCK_TILE_SKEW_SIZE_Y>(
-                a_frags, b_frags, acc_frags,
-                A_thread_block_tile_transposed[pipeline_index - 1],
-                B_thread_block_tile[pipeline_index - 1], warp_row_idx,
-                warp_col_idx);
-            __syncthreads();
+        // Compute the outer product
 
-            // Pipeline 1 warps process buffer 1.
-            if (thread_block_tile_idx + 1U < num_thread_block_tiles)
-            {
-                process_data_from_shared_memory_using_wmma<
-                    T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
-                    WARP_TILE_SIZE_X, WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X,
-                    WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K, NUM_WMMA_TILES_X,
-                    NUM_WMMA_TILES_Y, NUM_WMMA_TILES_K, BLOCK_TILE_SKEW_SIZE_X,
-                    BLOCK_TILE_SKEW_SIZE_Y>(
-                    a_frags, b_frags, acc_frags,
-                    A_thread_block_tile_transposed[pipeline_index],
-                    B_thread_block_tile[pipeline_index], warp_row_idx,
-                    warp_col_idx);
+        #pragma unroll
+        for (int i = 0; i < WMMA_TILE_NUM_M; i++) {
+            #pragma unroll
+            for (int j = 0; j < WMMA_TILE_NUM_N; j++) {
+                wmma::mma_sync(frag_c[i][j], frag_a[load_stage_idx][0][i], frag_b[load_stage_idx][0][j], frag_c[i][j]);
+                wmma::mma_sync(frag_c[i][j], frag_a[load_stage_idx][1][i], frag_b[load_stage_idx][1][j], frag_c[i][j]);
             }
-            __syncthreads();
+        }
+        
+        unsigned int const block_tile_load_stage_idx = load_stage_idx;
+
+        wmma::load_matrix_sync(frag_a[write_stage_idx][0][0], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64     ][ 0], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][0][1], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 16][ 0], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][0][2], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 32][ 0], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][0][3], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 48][ 0], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][1][0], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64     ][16], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][1][1], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 16][16], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][1][2], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 32][16], BLOCK_TILE_SIZE_K + APAD);
+        wmma::load_matrix_sync(frag_a[write_stage_idx][1][3], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 48][16], BLOCK_TILE_SIZE_K + APAD);
+
+        wmma::load_matrix_sync(frag_b[write_stage_idx][0][0], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][0][1], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][0][2], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][0][3], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][1][0], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][1][1], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][1][2], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+        wmma::load_matrix_sync(frag_b[write_stage_idx][1][3], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+
+
+        /**************Tail Process**************/
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_M * VECTORIZED_BLOCK_TILE_SIZE_K + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_m{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_K};
+            size_t const tile_index_k{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_K) * NUM_VECTOR_UNITS};
+    
+            if (tile_index_m < BLOCK_TILE_SIZE_M && tile_index_k < BLOCK_TILE_SIZE_K) {
+                *reinterpret_cast<int4*>(&A_block_tile[write_stage_idx][tile_index_m][tile_index_k]) = *reinterpret_cast<int4 const*>(&A_block_tile_reg[load_idx * NUM_VECTOR_UNITS]);
+            }
+        }
+
+        #pragma unroll
+        for (size_t load_idx{0U}; load_idx < (BLOCK_TILE_SIZE_K * VECTORIZED_BLOCK_TILE_SIZE_N + NUM_THREADS - 1) / NUM_THREADS; load_idx ++) {
+            size_t const thread_tile_id{threadId + load_idx * NUM_THREADS};
+            size_t const tile_index_k{thread_tile_id / VECTORIZED_BLOCK_TILE_SIZE_N};
+            size_t const tile_index_n{(thread_tile_id % VECTORIZED_BLOCK_TILE_SIZE_N) * NUM_VECTOR_UNITS};
+            if (tile_index_k < BLOCK_TILE_SIZE_K && tile_index_n < BLOCK_TILE_SIZE_N) {
+                *reinterpret_cast<int4*>(&B_block_tile[write_stage_idx][tile_index_k][tile_index_n]) = *reinterpret_cast<int4 const*>(&B_block_tile_reg[load_idx * NUM_VECTOR_UNITS]);
+            }
+        }
+
+        __syncthreads();
+
+        write_stage_idx ^= 1;
+
+    }
+
+    wmma::load_matrix_sync(frag_a[write_stage_idx][0][0], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64     ][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][0][1], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 16][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][0][2], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 32][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][0][3], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 48][ 0], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][1][0], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64     ][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][1][1], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 16][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][1][2], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 32][16], BLOCK_TILE_SIZE_K + APAD);
+    wmma::load_matrix_sync(frag_a[write_stage_idx][1][3], &A_block_tile[block_tile_load_stage_idx][comp_c_frag_m * 64 + 48][16], BLOCK_TILE_SIZE_K + APAD);
+
+    wmma::load_matrix_sync(frag_b[write_stage_idx][0][0], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][0][1], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][0][2], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][0][3], &B_block_tile[block_tile_load_stage_idx][ 0][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][1][0], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64     ], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][1][1], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 16], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][1][2], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 32], BLOCK_TILE_SIZE_N + BPAD);
+    wmma::load_matrix_sync(frag_b[write_stage_idx][1][3], &B_block_tile[block_tile_load_stage_idx][16][comp_c_frag_n * 64 + 48], BLOCK_TILE_SIZE_N + BPAD);
+
+    #pragma unroll
+    for (int i = 0; i < WMMA_TILE_NUM_M; i++) {
+        #pragma unroll
+        for (int j = 0; j < WMMA_TILE_NUM_N; j++) {
+            wmma::mma_sync(frag_c[i][j], frag_a[load_stage_idx][0][i], frag_b[load_stage_idx][0][j], frag_c[i][j]);
+            wmma::mma_sync(frag_c[i][j], frag_a[load_stage_idx][1][i], frag_b[load_stage_idx][1][j], frag_c[i][j]);
         }
     }
 
-// Write the results to DRAM.
-#pragma unroll
-    for (size_t wmma_tile_row_idx{0U}; wmma_tile_row_idx < NUM_WMMA_TILES_Y;
-         ++wmma_tile_row_idx)
-    {
-#pragma unroll
-        for (size_t wmma_tile_col_idx{0U}; wmma_tile_col_idx < NUM_WMMA_TILES_X;
-             ++wmma_tile_col_idx)
-        {
-            // Load the fragment from global memory.
-            nvcuda::wmma::load_matrix_sync(
-                c_frag,
-                &C[(blockIdx.y * BLOCK_TILE_SIZE_Y +
-                    warp_row_idx * WARP_TILE_SIZE_Y +
-                    wmma_tile_row_idx * WMMA_TILE_SIZE_Y) *
-                       n +
-                   blockIdx.x * BLOCK_TILE_SIZE_X +
-                   warp_col_idx * WARP_TILE_SIZE_X +
-                   wmma_tile_col_idx * WMMA_TILE_SIZE_X],
-                n, nvcuda::wmma::mem_row_major);
-            // Perform scaling and addition.
-            for (size_t i{0}; i < c_frag.num_elements; ++i)
-            {
-                c_frag.x[i] =
-                    alpha *
-                        acc_frags[wmma_tile_row_idx][wmma_tile_col_idx].x[i] +
-                    beta * c_frag.x[i];
-            }
-            // Store the fragment back to global memory.
-            nvcuda::wmma::store_matrix_sync(
-                &C[(blockIdx.y * BLOCK_TILE_SIZE_Y +
-                    warp_row_idx * WARP_TILE_SIZE_Y +
-                    wmma_tile_row_idx * WMMA_TILE_SIZE_Y) *
-                       n +
-                   blockIdx.x * BLOCK_TILE_SIZE_X +
-                   warp_col_idx * WARP_TILE_SIZE_X +
-                   wmma_tile_col_idx * WMMA_TILE_SIZE_X],
-                c_frag, n, nvcuda::wmma::mem_row_major);
+
+
+    size_t const C_idx_M_offset{blockIdx.y * BLOCK_TILE_SIZE_M + comp_c_frag_m * WMMA_TILE_NUM_M * WMMA_TILE_SIZE_M};
+    size_t const C_idx_N_offset{blockIdx.x * BLOCK_TILE_SIZE_N + comp_c_frag_n * WMMA_TILE_NUM_N * WMMA_TILE_SIZE_N};
+    // Store the result
+    #pragma unroll
+    for (size_t m_wmma_tile_idx{0}; m_wmma_tile_idx < WMMA_TILE_NUM_M; ++m_wmma_tile_idx) {
+        #pragma unroll
+        for (size_t n_wmma_tile_idx{0}; n_wmma_tile_idx < WMMA_TILE_NUM_N; ++n_wmma_tile_idx) {
+            size_t const C_idx{(C_idx_M_offset + m_wmma_tile_idx * WMMA_TILE_SIZE_M) * ldc + (C_idx_N_offset + n_wmma_tile_idx * WMMA_TILE_SIZE_N)};
+            wmma::store_matrix_sync(&C[C_idx], frag_c[m_wmma_tile_idx][n_wmma_tile_idx], ldc, wmma::mem_row_major);
         }
-    }
+    } 
+
+
 }
 
 template <typename T>
-void launch_gemm_kernel_v07_vectorized_double_buffered(
-    size_t m, size_t n, size_t k, T const* alpha, T const* A, size_t lda,
-    T const* B, size_t ldb, T const* beta, T* C, size_t ldc,
-    cudaStream_t stream)
-{
+void launch_gemm_kernel_v07_vectorized_double_buffered(size_t m, size_t n, size_t k,
+                                       T const* alpha, T const* A, size_t lda,
+                                       T const* B, size_t ldb, T const* beta,
+                                       T* C, size_t ldc, cudaStream_t stream) {
     // Feel free to play with the block tile sizes.
     // The algorithm correctness should always be guaranteed.
+    constexpr unsigned int BLOCK_TILE_SIZE_M{128U};
+    constexpr unsigned int BLOCK_TILE_SIZE_N{256U};
+    constexpr unsigned int BLOCK_TILE_SIZE_K{32U};
+
+    constexpr unsigned int WMMA_TILE_SIZE_M{16U};
+    constexpr unsigned int WMMA_TILE_SIZE_N{16U};  
+    constexpr unsigned int WMMA_TILE_SIZE_K{16U};      
+
+    
+    constexpr unsigned int WMMA_TILE_NUM_M{4U};
+    constexpr unsigned int WMMA_TILE_NUM_N{4U};
+
+    constexpr unsigned int NUM_THREADS{BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_N / (WMMA_TILE_SIZE_M * WMMA_TILE_NUM_M * WMMA_TILE_SIZE_N * WMMA_TILE_NUM_N) * 32U};
+
+    static_assert(NUM_THREADS <= 1024U);
+    static_assert(BLOCK_TILE_SIZE_K * BLOCK_TILE_SIZE_N % NUM_THREADS == 0U);
+    static_assert(BLOCK_TILE_SIZE_M * BLOCK_TILE_SIZE_K % NUM_THREADS == 0U);
+
+    dim3 const block_dim{NUM_THREADS, 1U, 1U};
+    dim3 const grid_dim{
+        (static_cast<unsigned int>(n) + BLOCK_TILE_SIZE_N - 1U) / BLOCK_TILE_SIZE_N,
+        (static_cast<unsigned int>(m) + BLOCK_TILE_SIZE_M - 1U) / BLOCK_TILE_SIZE_M, 1U};
+    launch_gemm_kernel_v07_vectorized_double_buffered<T, BLOCK_TILE_SIZE_M, BLOCK_TILE_SIZE_N, BLOCK_TILE_SIZE_K, 
+                                                        WMMA_TILE_SIZE_M, WMMA_TILE_SIZE_N, WMMA_TILE_SIZE_K,
+                                                        WMMA_TILE_NUM_M, WMMA_TILE_NUM_N, NUM_THREADS>
+        <<<grid_dim, block_dim, 0U, stream>>>(m, n, k, *alpha, A, lda, B, ldb, *beta, C, ldc);
+    CHECK_LAST_CUDA_ERROR();
 }
 
 // Explicit instantiation.

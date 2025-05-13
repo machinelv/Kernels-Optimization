@@ -5,8 +5,8 @@
 // #include "cuda_gemm_utils.cuh"
 // #include "cuda_gemm_utils.hpp"
 
-// // https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/
-// // https://github.com/NVIDIA/cutlass/blob/b7508e337938137a699e486d8997646980acfc58/media/docs/programming_guidelines.md
+// https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/
+// https://github.com/NVIDIA/cutlass/blob/b7508e337938137a699e486d8997646980acfc58/media/docs/programming_guidelines.md
 
 // // GEMM kernel v07.
 // // Each thread in the block processes THREAD_TILE_SIZE_Y *
