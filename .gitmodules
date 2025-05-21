@@ -16,3 +16,6 @@
 [submodule "ref/DeepGEMM"]
 	path = ref/DeepGEMM
 	url = https://github.com/deepseek-ai/DeepGEMM.git
+[submodule "ref/triton"]
+	path = ref/triton
+	url = https://github.com/ROCm/triton.git
