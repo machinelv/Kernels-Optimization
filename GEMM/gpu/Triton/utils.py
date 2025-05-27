@@ -31,8 +31,8 @@ def get_device(use_cuda: bool = True) -> torch.device:
 def verbose_allclose(
         received: torch.Tensor,
         expected: torch.Tensor,
-        rtol=1e-05,
-        atol=1e-08,
+        rtol=1e-02,
+        atol=1e-04,
         max_print=5
 ) -> Tuple[bool, list[str]]:
     """

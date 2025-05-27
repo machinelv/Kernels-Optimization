@@ -53,7 +53,7 @@ template <typename T_INPUT, typename T_OUTPUT,
             size_t WMMA_TILE_SIZE_M, size_t WMMA_TILE_SIZE_N, size_t WMMA_TILE_SIZE_K,
             size_t WMMA_TILE_NUM_M, size_t WMMA_TILE_NUM_N,
             size_t NUM_THREADS, size_t WARP_SIZE, size_t STAGE_NUMS>
-__device__ void load_data_from_global_memory_to_shared_memory(
+inline __device__ void load_data_from_global_memory_to_shared_memory(
     const T_INPUT* Matrix, T_OUTPUT* block_tile_matrix,
     const size_t M, const size_t N, const size_t K,
     const size_t block_row, const size_t block_col,
@@ -64,11 +64,31 @@ __device__ void load_data_from_global_memory_to_shared_memory(
     const size_t shared_mem_index = block_row * BLOCK_TILE_SIZE_M + block_col;
     block_tile_matrix[shared_mem_index] = Matrix[block_row_offset + block_col_offset];
 
-    
 
 
 }
 
+
+
+template <typename T_INPUT, typename T_OUTPUT, 
+            size_t BLOCK_TILE_SIZE_M, size_t BLOCK_TILE_SIZE_N, size_t BLOCK_TILE_SIZE_K,
+            size_t WMMA_TILE_SIZE_M, size_t WMMA_TILE_SIZE_N, size_t WMMA_TILE_SIZE_K,
+            size_t WMMA_TILE_NUM_M, size_t WMMA_TILE_NUM_N,
+            size_t NUM_THREADS, size_t WARP_SIZE, size_t STAGE_NUMS>
+inline __device__ void load_data_from_shared_memory_to_register(
+    const T_INPUT* Matrix, T_OUTPUT* block_tile_matrix,
+    const size_t M, const size_t N, const size_t K,
+    const size_t block_row, const size_t block_col,
+    const size_t block_row_offset, const size_t block_col_offset
+    ) 
+{
+    // Load data from global memory to shared memory
+    const size_t shared_mem_index = block_row * BLOCK_TILE_SIZE_M + block_col;
+    block_tile_matrix[shared_mem_index] = Matrix[block_row_offset + block_col_offset];
+
+
+
+}
 
 
 
@@ -85,7 +105,7 @@ __global__ void BF8_GEMM_kernel(const T_INPUT* A, const T_INPUT* B, const float*
                     T_OUTPUT* c, const size_t M, const size_t N, const size_t K) 
 {       
 
-
+    
 
 
 

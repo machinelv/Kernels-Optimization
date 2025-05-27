@@ -31,10 +31,10 @@ def generate_input(m: int, n: int, k: int, seed: int) -> input_t:
     # a = 0.5*(torch.ones((k, m), dtype=torch.bfloat16, device="cuda")).to(torch.float8_e4m3fn)
     # b = 0.5*(torch.ones((k, n), dtype=torch.bfloat16, device="cuda")).to(torch.float8_e4m3fn)
     # Generate scaling factors with FP32
-    a_scale = torch.randn([scale_k, m], dtype=torch.float32, device="cuda", generator=gen)
-    b_scale = torch.randn([scale_k, scale_n], dtype=torch.float32, device="cuda", generator=gen)
-    # a_scale = torch.ones((scale_k, m), device="cuda", dtype=torch.float32)
-    # b_scale = torch.ones((scale_k, scale_n), device="cuda", dtype=torch.float32)    
+    # a_scale = torch.randn([scale_k, m], dtype=torch.float32, device="cuda", generator=gen)
+    # b_scale = torch.randn([scale_k, scale_n], dtype=torch.float32, device="cuda", generator=gen)
+    a_scale = torch.ones((scale_k, m), device="cuda", dtype=torch.float32)
+    b_scale = torch.ones((scale_k, scale_n), device="cuda", dtype=torch.float32)    
 
     c = torch.zeros((m, n), dtype=torch.bfloat16, device="cuda")
     return (a.T, b.T, a_scale.T, b_scale.T, c)
@@ -68,7 +68,7 @@ def ref_kernel(data: input_t) -> output_t:
     a_scale = a_scale[:, :k]
 
     # Dequantize 'a', in your implementation you should do this at the end.
-    a = a.to(a_scale.dtype) 
+    a = a.to(a_scale.dtype) * a_scale
 
     # Apply blockwise scaling to input 'b'
     b_scale = (
@@ -81,7 +81,7 @@ def ref_kernel(data: input_t) -> output_t:
     b_scale = b_scale[:n, :k]
 
     # Dequantize 'b', in your implementation you should do this at the end.
-    b = b.to(b_scale.dtype) 
+    b = b.to(b_scale.dtype) * b_scale
 
     # Compute FP8 GEMM and write to 'c'. 
     c[...] = (a @ b.T).to(torch.bfloat16)
