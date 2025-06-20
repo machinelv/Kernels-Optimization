@@ -19,3 +19,6 @@
 [submodule "ref/triton"]
 	path = ref/triton
 	url = https://github.com/ROCm/triton.git
+[submodule "ref/RadeonFlow_Kernels"]
+	path = ref/RadeonFlow_Kernels
+	url = https://github.com/RadeonFlow/RadeonFlow_Kernels.git
